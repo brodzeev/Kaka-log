@@ -49,6 +49,7 @@ export default function Home() {
   const [quantity, setQuantity] = useState<'small' | 'medium' | 'a lot'>('medium')
   const [newMemberName, setNewMemberName] = useState('')
   const [addMemberError, setAddMemberError] = useState('')
+  const [removeMemberError, setRemoveMemberError] = useState('')
   const [showAddMember, setShowAddMember] = useState(false)
 
   useEffect(() => {
@@ -163,6 +164,25 @@ export default function Home() {
       setNewMemberName('')
     } else {
       setAddMemberError(result.error || 'Failed to add member')
+    }
+  }
+
+  const removeMember = async () => {
+    if (!loggedInUser || !currentMember) return
+    setRemoveMemberError('')
+    const response = await fetch('/api/family-members', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: loggedInUser.id, memberId: currentMember.id })
+    })
+    const result = await response.json()
+    if (result.success) {
+      const updatedMembers = familyMembers.filter(m => m.id !== currentMember.id)
+      setFamilyMembers(updatedMembers)
+      setCurrentMember(updatedMembers[0] || null)
+      setLogs([]) // Clear logs since member changed
+    } else {
+      setRemoveMemberError(result.error || 'Failed to remove member')
     }
   }
 
@@ -371,6 +391,9 @@ export default function Home() {
                     onChange={e => setNewMemberName(e.target.value)}
                     className="rounded-xl border border-slate-300 px-3 py-2 text-sm min-w-[10rem]"
                   />
+                  {(addMemberError || removeMemberError) && (
+                    <p className="text-red-500 text-sm">{addMemberError || removeMemberError}</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-3 items-center justify-end">
                   <button
@@ -379,8 +402,13 @@ export default function Home() {
                   >
                     Add
                   </button>
-                  <button
-                    onClick={() => {
+                  <button                    onClick={removeMember}
+                    disabled={familyMembers.length <= 1}
+                    className="rounded-xl bg-red-500 px-3 py-2 text-white text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Remove
+                  </button>
+                  <button                    onClick={() => {
                       setLoggedInUser(null)
                       setCurrentMember(null)
                       setFamilyMembers([])
@@ -447,13 +475,15 @@ export default function Home() {
                 <div className="rounded-xl bg-white p-4 shadow-sm">
                   <h2 className="text-xl font-semibold mb-3">Show Charts</h2>
                   <div className="space-y-4">
-                    {['soft', 'liquid', 'solid'].map(typeKey => {
+                    {['soft', 'liquid', 'solid', 'const'].map(typeKey => {
                       const count = typeCounts[typeKey] ?? 0
                       const width = totalLogs ? `${Math.round((count / totalLogs) * 100)}%` : '0%'
                       return (
                         <div key={typeKey}>
                           <div className="flex items-center justify-between text-sm font-medium">
-                            <span>{typeKey.charAt(0).toUpperCase() + typeKey.slice(1)}</span>
+                            <div className="flex items-center gap-2">
+                              {getImage(typeKey)}
+                            </div>
                             <span>{count}</span>
                           </div>
                           <div className="h-3 overflow-hidden rounded-full bg-slate-200">
@@ -472,7 +502,12 @@ export default function Home() {
                   <div className="space-y-3 text-sm text-slate-700">
                     <div>Total entries: <span className="font-semibold">{totalLogs}</span></div>
                     <div>Average time: <span className="font-semibold">{averageTime} min</span></div>
-                    <div>Most common type: <span className="font-semibold">{mostCommonType.charAt(0).toUpperCase() + mostCommonType.slice(1)}</span></div>
+                    <div className="flex items-center gap-2">
+                      Most common type:
+                      <span className="font-semibold inline-flex items-center">
+                        {getImage(mostCommonType.toLowerCase())}
+                      </span>
+                    </div>
                     <div>Most common quantity: <span className="font-semibold">{mostCommonQuantity.charAt(0).toUpperCase() + mostCommonQuantity.slice(1)}</span></div>
                   </div>
                 </div>
@@ -488,16 +523,17 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-4">Log for {selectedDate?.toDateString()} - {currentMember?.name}</h2>
             <div className="mb-4">
               <label className="block mb-2 font-medium">Type</label>
-              <div className="flex justify-around gap-4">
+              <div className="flex flex-wrap justify-center gap-2">
                 {[
                   { key: 'soft', label: 'Soft stool' },
                   { key: 'liquid', label: 'Liquid stool' },
-                  { key: 'solid', label: 'Solid stool' }
+                  { key: 'solid', label: 'Solid stool' },
+                  { key: 'const', label: 'Constipated stool' }
                 ].map((stoolType) => (
                   <button
                     key={stoolType.key}
                     onClick={() => setType(stoolType.key)}
-                    className={`flex flex-col items-center p-3 rounded-xl border-2 transition-colors ${
+                    className={`flex flex-col items-center p-2 rounded-xl border-2 transition-colors flex-1 min-w-[90px] max-w-[110px] ${
                       type === stoolType.key
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-300 hover:border-gray-400'
@@ -508,10 +544,10 @@ export default function Home() {
                       onError={(e) => {
                         (e.currentTarget as HTMLImageElement).src = `/images/${stoolType.key}.svg`;
                       }}
-                      className="w-16 h-16 object-contain mb-2"
+                      className="w-12 h-12 object-contain mb-1"
                       alt={stoolType.label}
                     />
-                    <span className="text-sm font-medium text-center">{stoolType.label}</span>
+                    <span className="text-xs font-medium text-center leading-tight">{stoolType.label}</span>
                   </button>
                 ))}
               </div>

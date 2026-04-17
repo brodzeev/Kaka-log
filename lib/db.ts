@@ -145,3 +145,15 @@ export async function addFamilyMember(userId: string, name: string): Promise<Fam
   await writeData(data)
   return member
 }
+
+export async function removeFamilyMember(userId: string, memberId: string): Promise<void> {
+  const data = await readData()
+  const userIndex = data.users.findIndex(u => u.id === userId)
+  if (userIndex === -1) throw new Error('User not found')
+  const user = data.users[userIndex]
+  if (user.familyMembers.length <= 1) throw new Error('Cannot remove the last family member')
+  user.familyMembers = user.familyMembers.filter(m => m.id !== memberId)
+  // Also remove logs for this member
+  data.logs = data.logs.filter(log => log.memberId !== memberId)
+  await writeData(data)
+}
