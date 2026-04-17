@@ -12,9 +12,13 @@ export async function POST(request: NextRequest) {
 
     const member = await addFamilyMember(userId, trimmedName)
     return NextResponse.json({ success: true, member })
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })
-  }
+  } catch (error: any) {
+  return NextResponse.json(
+    { success: false, error: error.message },
+    { status: 500 }
+  )
+}
+
 }
 
 export async function DELETE(request: NextRequest) {
@@ -27,7 +31,11 @@ export async function DELETE(request: NextRequest) {
 
     await removeFamilyMember(userId, memberId)
     return NextResponse.json({ success: true })
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })
-  }
+  } catch (error: any) {
+  return NextResponse.json(
+    { success: false, error: error.message },
+    { status: 500 }
+  )
+}
+
 }

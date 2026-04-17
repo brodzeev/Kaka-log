@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addUser } from '../../../lib/db'
+import { addUser } from '../../../../lib/db'
 
 export async function POST(request: NextRequest) {
   const { name, type } = await request.json()

@@ -18,7 +18,10 @@ export async function POST(request: NextRequest) {
 
     const user = await addUser(trimmedName, trimmedPassword)
     return NextResponse.json({ success: true, user })
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })
-  }
+  } catch (error: any) {
+  return NextResponse.json(
+    { success: false, error: error.message },
+    { status: 500 }
+  )
+}
 }
