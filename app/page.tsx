@@ -196,7 +196,7 @@ export default function Home() {
     if (view === 'month') {
       const log = logs.find(log => log.date === date.toDateString())
       if (log) {
-        return <div className="text-xs">{getImage(log.type)}</div>
+        return <div className="flex justify-center"><img src={`/images/${log.type}.png`} onError={e => { (e.currentTarget as HTMLImageElement).src = `/images/${log.type}.svg` }} className="w-8 h-8 object-contain" alt={log.type} /></div>
       }
     }
     return null
@@ -428,7 +428,9 @@ export default function Home() {
 
           <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
             <div className="rounded-xl bg-white p-4 shadow-sm">
-              <Calendar onClickDay={onClickDay} tileContent={tileContent} />
+              <div className="max-w-md mx-auto">
+                <Calendar onClickDay={onClickDay} tileContent={tileContent} />
+              </div>
             </div>
 
             <div className="space-y-6">

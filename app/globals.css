@@ -1,3 +1,80 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Calendar styling */
+.react-calendar {
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: white;
+  width: 100%;
+  padding: 1rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.react-calendar__navigation {
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.react-calendar__navigation button {
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+}
+
+.react-calendar__navigation button:hover {
+  background-color: #e2e8f0;
+}
+
+.react-calendar__navigation__label {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+.react-calendar__tile {
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+}
+
+.react-calendar__tile:hover:not([disabled]) {
+  background-color: #f1f5f9;
+}
+
+.react-calendar__tile--active {
+  background-color: #1e293b;
+  color: white;
+  border: none;
+}
+
+.react-calendar__tile--active:hover {
+  background-color: #0f172a;
+}
+
+.react-calendar__tile--now {
+  background-color: #dbeafe;
+  border: 1px solid #93c5fd;
+}
+
+.react-calendar__tile--disabled {
+  color: #cbd5e1;
+  background-color: #f1f5f9;
+  cursor: not-allowed;
+}
