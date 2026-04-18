@@ -1,22 +1,44 @@
-import { promises as fs } from 'fs'
-import path from 'path'
+import { MongoClient, Db, Collection } from 'mongodb'
 import crypto from 'crypto'
 
-const dataFile = path.join(process.cwd(), 'data.json')
+const MONGODB_URI = process.env.MONGODB_URI
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI environment variable is not set')
+}
 
-interface FamilyMember {
+let cachedClient: MongoClient | null = null
+let cachedDb: Db | null = null
+
+async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
+  if (cachedClient && cachedDb) {
+    return { client: cachedClient, db: cachedDb }
+  }
+
+  const client = new MongoClient(MONGODB_URI as string)
+  await client.connect()
+  const db = client.db('kakilogger')
+
+  cachedClient = client
+  cachedDb = db
+
+  return { client, db }
+}
+
+export interface FamilyMember {
   id: string
   name: string
 }
 
-interface User {
+export interface User {
+  _id?: string
   id: string
   name: string
   password: string // hashed
   familyMembers: FamilyMember[]
 }
 
-interface Log {
+export interface Log {
+  _id?: string
   id: string
   date: string
   type: string
@@ -24,23 +46,6 @@ interface Log {
   quantity: 'small' | 'medium' | 'a lot'
   timestamp: string
   memberId: string
-}
-
-async function readData(): Promise<{ users: User[]; logs: Log[] }> {
-  try {
-    const data = await fs.readFile(dataFile, 'utf8')
-    const parsed = JSON.parse(data)
-    return {
-      users: parsed.users || [],
-      logs: parsed.logs || []
-    }
-  } catch {
-    return { users: [], logs: [] }
-  }
-}
-
-async function writeData(data: { users: User[]; logs: Log[] }): Promise<void> {
-  await fs.writeFile(dataFile, JSON.stringify(data, null, 2))
 }
 
 async function hashPassword(password: string): Promise<string> {
@@ -64,43 +69,58 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 }
 
 export async function getUsers(): Promise<User[]> {
-  const data = await readData()
-  return data.users
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  const users = await collection.find({}).toArray()
+  return users.map(({ _id, ...user }) => user)
 }
 
 export async function addUser(name: string, password: string): Promise<User> {
-  const data = await readData()
-  const existing = data.users.find(u => u.name === name)
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  
+  const existing = await collection.findOne({ name })
   if (existing) {
     throw new Error('User already exists')
   }
-  const id = `user-${data.users.length + 1}`
+  
+  const users = await collection.find({}).toArray()
+  const id = `user-${users.length + 1}`
   const hashedPassword = await hashPassword(password)
+  
   const user: User = {
     id,
     name,
     password: hashedPassword,
     familyMembers: [{ id: `${id}-member-1`, name }]
   }
-  data.users.push(user)
-  await writeData(data)
+  
+  await collection.insertOne(user as any)
   return user
 }
 
 export async function authenticate(name: string, password: string): Promise<User | null> {
-  const data = await readData()
-  const user = data.users.find(u => u.name === name)
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  
+  const user = await collection.findOne({ name })
   if (!user) return null
+  
   const isValid = await verifyPassword(password, user.password)
-  return isValid ? user : null
+  return isValid ? { ...user, _id: undefined } : null
 }
 
 export async function getLogs(memberId?: string): Promise<Log[]> {
-  const data = await readData()
+  const { db } = await connectToDatabase()
+  const collection: Collection<Log> = db.collection('logs')
+  
   if (memberId !== undefined) {
-    return data.logs.filter(log => log.memberId === memberId)
+    const logs = await collection.find({ memberId }).toArray()
+    return logs.map(({ _id, ...log }) => log)
   }
-  return data.logs
+  
+  const logs = await collection.find({}).toArray()
+  return logs.map(({ _id, ...log }) => log)
 }
 
 export async function upsertLog(
@@ -111,49 +131,70 @@ export async function upsertLog(
   timestamp: string,
   memberId: string
 ): Promise<void> {
-  const data = await readData()
-  const existingIndex = data.logs.findIndex(log => log.date === date && log.memberId === memberId)
-  if (existingIndex >= 0) {
-    data.logs[existingIndex] = {
-      ...data.logs[existingIndex],
-      type,
-      time,
-      quantity,
-      timestamp
-    }
+  const { db } = await connectToDatabase()
+  const collection: Collection<Log> = db.collection('logs')
+  
+  const existingLog = await collection.findOne({ date, memberId })
+  
+  if (existingLog) {
+    await collection.updateOne(
+      { date, memberId },
+      {
+        $set: {
+          type,
+          time,
+          quantity,
+          timestamp
+        }
+      }
+    )
   } else {
-    const id = `log-${data.logs.length + 1}`
-    data.logs.push({ id, date, type, time, quantity, timestamp, memberId })
+    const logs = await collection.find({}).toArray()
+    const id = `log-${logs.length + 1}`
+    const newLog: Log = { id, date, type, time, quantity, timestamp, memberId }
+    await collection.insertOne(newLog as any)
   }
-  await writeData(data)
 }
 
 export async function deleteLog(date: string, memberId: string): Promise<void> {
-  const data = await readData()
-  data.logs = data.logs.filter(log => !(log.date === date && log.memberId === memberId))
-  await writeData(data)
+  const { db } = await connectToDatabase()
+  const collection: Collection<Log> = db.collection('logs')
+  await collection.deleteOne({ date, memberId })
 }
 
 export async function addFamilyMember(userId: string, name: string): Promise<FamilyMember> {
-  const data = await readData()
-  const userIndex = data.users.findIndex(u => u.id === userId)
-  if (userIndex === -1) throw new Error('User not found')
-  const user = data.users[userIndex]
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  
+  const user = await collection.findOne({ id: userId })
+  if (!user) throw new Error('User not found')
+  
   const memberId = `${userId}-member-${user.familyMembers.length + 1}`
   const member: FamilyMember = { id: memberId, name }
-  user.familyMembers.push(member)
-  await writeData(data)
+  
+  await collection.updateOne(
+    { id: userId },
+    { $push: { familyMembers: member } }
+  )
+  
   return member
 }
 
 export async function removeFamilyMember(userId: string, memberId: string): Promise<void> {
-  const data = await readData()
-  const userIndex = data.users.findIndex(u => u.id === userId)
-  if (userIndex === -1) throw new Error('User not found')
-  const user = data.users[userIndex]
+  const { db } = await connectToDatabase()
+  const usersCollection: Collection<User> = db.collection('users')
+  const logsCollection: Collection<Log> = db.collection('logs')
+  
+  const user = await usersCollection.findOne({ id: userId })
+  if (!user) throw new Error('User not found')
+  
   if (user.familyMembers.length <= 1) throw new Error('Cannot remove the last family member')
-  user.familyMembers = user.familyMembers.filter(m => m.id !== memberId)
+  
+  await usersCollection.updateOne(
+    { id: userId },
+    { $pull: { familyMembers: { id: memberId } } }
+  )
+  
   // Also remove logs for this member
-  data.logs = data.logs.filter(log => log.memberId !== memberId)
-  await writeData(data)
+  await logsCollection.deleteMany({ memberId })
 }
