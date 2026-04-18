@@ -9,13 +9,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { date, type, time, memberId } = await request.json()
+  const { date, type, time, quantity, timestamp, memberId } = await request.json()
 
   if (!date || !type || time === undefined || !memberId) {
     return NextResponse.json({ success: false, error: 'Date, type, time, and memberId are required' }, { status: 400 })
   }
 
-  await upsertLog(date, type, time, memberId)
+  const logTimestamp = timestamp || new Date().toISOString()
+  const logQuantity = quantity || 'medium'
+
+  await upsertLog(date, type, time, logQuantity, logTimestamp, memberId)
   return NextResponse.json({ success: true })
 }
 
