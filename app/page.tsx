@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Calendar from 'react-calendar'
 import 'react-calendar/dist/Calendar.css'
+import CustomSelect from '../components/CustomSelect'
 
 interface FamilyMember {
   id: string
@@ -14,6 +15,7 @@ interface User {
   name: string
   password: string
   familyMembers: FamilyMember[]
+  theme?: 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'
 }
 
 interface Log {
@@ -27,8 +29,76 @@ interface Log {
 }
 
 type View = 'calendar' | 'logs' | 'charts' | 'trends'
+type Theme = 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'
+
+interface ThemeConfig {
+  bg: {
+    primary: string
+    secondary: string
+    tertiary: string
+  }
+  text: {
+    primary: string
+    secondary: string
+  }
+  button: {
+    primary: string
+    primaryText: string
+    primaryHover: string
+    secondary: string
+    secondaryHover: string
+  }
+  border: string
+  input: string
+}
 
 export default function Home() {
+  const themes: Record<Theme, ThemeConfig> = {
+    light: {
+      bg: { primary: 'bg-slate-50', secondary: 'bg-white', tertiary: 'bg-slate-100' },
+      text: { primary: 'text-slate-900', secondary: 'text-slate-600' },
+      button: { primary: 'bg-slate-900', primaryText: 'text-white', primaryHover: 'hover:bg-slate-800', secondary: 'bg-slate-50', secondaryHover: 'hover:bg-slate-100' },
+      border: 'border-slate-300',
+      input: 'border-slate-300'
+    },
+    dark: {
+      bg: { primary: 'bg-slate-900', secondary: 'bg-slate-800', tertiary: 'bg-slate-700' },
+      text: { primary: 'text-white', secondary: 'text-slate-300' },
+      button: { primary: 'bg-blue-600', primaryText: 'text-white', primaryHover: 'hover:bg-blue-700', secondary: 'bg-slate-700', secondaryHover: 'hover:bg-slate-600' },
+      border: 'border-slate-700',
+      input: 'border-slate-600'
+    },
+    slate: {
+      bg: { primary: 'bg-slate-100', secondary: 'bg-slate-50', tertiary: 'bg-slate-200' },
+      text: { primary: 'text-slate-900', secondary: 'text-slate-700' },
+      button: { primary: 'bg-slate-700', primaryText: 'text-white', primaryHover: 'hover:bg-slate-600', secondary: 'bg-slate-100', secondaryHover: 'hover:bg-slate-200' },
+      border: 'border-slate-300',
+      input: 'border-slate-300'
+    },
+    ocean: {
+      bg: { primary: 'bg-blue-50', secondary: 'bg-white', tertiary: 'bg-blue-100' },
+      text: { primary: 'text-blue-900', secondary: 'text-blue-700' },
+      button: { primary: 'bg-blue-600', primaryText: 'text-white', primaryHover: 'hover:bg-blue-700', secondary: 'bg-blue-50', secondaryHover: 'hover:bg-blue-100' },
+      border: 'border-blue-300',
+      input: 'border-blue-300'
+    },
+    forest: {
+      bg: { primary: 'bg-green-50', secondary: 'bg-white', tertiary: 'bg-green-100' },
+      text: { primary: 'text-green-900', secondary: 'text-green-700' },
+      button: { primary: 'bg-green-700', primaryText: 'text-white', primaryHover: 'hover:bg-green-800', secondary: 'bg-green-50', secondaryHover: 'hover:bg-green-100' },
+      border: 'border-green-300',
+      input: 'border-green-300'
+    },
+    sunset: {
+      bg: { primary: 'bg-orange-50', secondary: 'bg-white', tertiary: 'bg-orange-100' },
+      text: { primary: 'text-orange-900', secondary: 'text-orange-700' },
+      button: { primary: 'bg-orange-600', primaryText: 'text-white', primaryHover: 'hover:bg-orange-700', secondary: 'bg-orange-50', secondaryHover: 'hover:bg-orange-100' },
+      border: 'border-orange-300',
+      input: 'border-orange-300'
+    }
+  }
+
+  const [theme, setTheme] = useState<Theme>('light')
   const [showModal, setShowModal] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [type, setType] = useState('soft')
@@ -51,6 +121,21 @@ export default function Home() {
   const [addMemberError, setAddMemberError] = useState('')
   const [removeMemberError, setRemoveMemberError] = useState('')
   const [showAddMember, setShowAddMember] = useState(false)
+
+  const tc = themes[theme]
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as Theme
+    if (savedTheme && (Object.keys(themes) as Theme[]).includes(savedTheme)) {
+      setTheme(savedTheme)
+      document.documentElement.setAttribute('data-theme', savedTheme)
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     if (currentMember) {
@@ -121,6 +206,11 @@ export default function Home() {
       setLoggedInUser(result.user)
       setFamilyMembers(result.user.familyMembers)
       setCurrentMember(result.user.familyMembers[0] || null)
+      // Set theme from user preference or default to light
+      const userTheme = (result.user.theme as Theme) || 'light'
+      setTheme(userTheme)
+      document.documentElement.setAttribute('data-theme', userTheme)
+      localStorage.setItem('theme', userTheme)
       setLoginName('')
       setLoginPassword('')
     } else {
@@ -146,6 +236,21 @@ export default function Home() {
       setRegisterPassword('')
     } else {
       setRegisterError(result.error || 'Registration failed')
+    }
+  }
+
+  const handleThemeChange = async (newTheme: Theme) => {
+    setTheme(newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
+    localStorage.setItem('theme', newTheme)
+    
+    // Save to database if user is logged in
+    if (loggedInUser) {
+      await fetch('/api/users/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: loggedInUser.id, theme: newTheme })
+      })
     }
   }
 
@@ -217,8 +322,8 @@ export default function Home() {
 
   if (!loggedInUser) {
     return (
-      <main className="min-h-screen bg-slate-100 text-slate-900 flex items-center justify-center">
-        <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-sm">
+      <main className={`min-h-screen ${tc.bg.primary} ${tc.text.primary} flex items-center justify-center`}>
+        <div className={`w-full max-w-md rounded-xl ${tc.bg.secondary} p-6 shadow-sm`}>
           <h1 className="text-2xl font-bold mb-6 text-center">Kaki Logger</h1>
           {!showRegister ? (
             <>
@@ -228,25 +333,25 @@ export default function Home() {
                 placeholder="Username"
                 value={loginName}
                 onChange={e => setLoginName(e.target.value)}
-                className="w-full mb-3 rounded-xl border border-slate-300 px-3 py-2"
+                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={loginPassword}
                 onChange={e => setLoginPassword(e.target.value)}
-                className="w-full mb-3 rounded-xl border border-slate-300 px-3 py-2"
+                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
               />
               {loginError && <p className="text-red-500 text-sm mb-3">{loginError}</p>}
               <button
                 onClick={login}
-                className="w-full mb-3 rounded-xl bg-slate-900 px-3 py-2 text-white"
+                className={`w-full mb-3 rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText}`}
               >
                 Login
               </button>
               <button
                 onClick={() => setShowRegister(true)}
-                className="w-full rounded-xl bg-slate-50 px-3 py-2 text-slate-700 hover:bg-slate-100"
+                className={`w-full rounded-xl ${tc.button.secondary} px-3 py-2 ${tc.text.primary} ${tc.button.secondaryHover}`}
               >
                 Register
               </button>
@@ -259,25 +364,25 @@ export default function Home() {
                 placeholder="Username"
                 value={registerName}
                 onChange={e => setRegisterName(e.target.value)}
-                className="w-full mb-3 rounded-xl border border-slate-300 px-3 py-2"
+                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={registerPassword}
                 onChange={e => setRegisterPassword(e.target.value)}
-                className="w-full mb-3 rounded-xl border border-slate-300 px-3 py-2"
+                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
               />
               {registerError && <p className="text-red-500 text-sm mb-3">{registerError}</p>}
               <button
                 onClick={register}
-                className="w-full mb-3 rounded-xl bg-slate-900 px-3 py-2 text-white"
+                className={`w-full mb-3 rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText}`}
               >
                 Register
               </button>
               <button
                 onClick={() => setShowRegister(false)}
-                className="w-full rounded-xl bg-slate-50 px-3 py-2 text-slate-700 hover:bg-slate-100"
+                className={`w-full rounded-xl ${tc.button.secondary} px-3 py-2 ${tc.text.primary} ${tc.button.secondaryHover}`}
               >
                 Back to Login
               </button>
@@ -289,25 +394,43 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
+    <main className={`min-h-screen ${tc.bg.primary} ${tc.text.primary}`}>
       <div className="mx-auto flex w-full max-w-7xl gap-6 p-4">
         {/* Sidebar for desktop */}
-        <aside className="hidden md:block w-56 rounded-xl bg-white p-4 shadow-sm">
+        <aside className={`hidden md:block w-56 rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
           <h2 className="text-lg font-semibold mb-4">Options</h2>
+          <div className="mb-6">
+            <label className="text-sm font-semibold block mb-2">Theme:</label>
+            <CustomSelect
+              value={theme}
+              onChange={(value) => handleThemeChange(value as Theme)}
+              options={[
+                { label: 'Light', value: 'light' },
+                { label: 'Dark', value: 'dark' },
+                { label: 'Slate', value: 'slate' },
+                { label: 'Ocean', value: 'ocean' },
+                { label: 'Forest', value: 'forest' },
+                { label: 'Sunset', value: 'sunset' }
+              ]}
+              textColor={tc.text.primary}
+              bgColor={tc.bg.tertiary}
+              borderColor={tc.border}
+            />
+          </div>
           <button
-            className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'logs' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+            className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'logs' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
             onClick={() => setView('logs')}
           >
             Show Poo Logs
           </button>
           <button
-            className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'charts' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+            className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'charts' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
             onClick={() => setView('charts')}
           >
             Show Charts
           </button>
           <button
-            className={`block w-full rounded-xl px-3 py-2 text-left ${view === 'trends' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+            className={`block w-full rounded-xl px-3 py-2 text-left ${view === 'trends' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
             onClick={() => setView('trends')}
           >
             My Trends
@@ -318,30 +441,48 @@ export default function Home() {
         {sidebarOpen && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setSidebarOpen(false)} />
-            <aside className="absolute left-0 top-0 h-full w-56 bg-white p-4 shadow-sm">
+            <aside className={`absolute left-0 top-0 h-full w-56 ${tc.bg.secondary} p-4 shadow-sm`}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Options</h2>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-slate-500 hover:text-slate-700"
+                  className={`${tc.text.secondary} hover:${tc.text.primary}`}
                 >
                   ✕
                 </button>
               </div>
+              <div className="mb-6">
+                <label className="text-sm font-semibold block mb-2">Theme:</label>
+                <CustomSelect
+                  value={theme}
+                  onChange={(value) => handleThemeChange(value as Theme)}
+                  options={[
+                    { label: 'Light', value: 'light' },
+                    { label: 'Dark', value: 'dark' },
+                    { label: 'Slate', value: 'slate' },
+                    { label: 'Ocean', value: 'ocean' },
+                    { label: 'Forest', value: 'forest' },
+                    { label: 'Sunset', value: 'sunset' }
+                  ]}
+                  textColor={tc.text.primary}
+                  bgColor={tc.bg.tertiary}
+                  borderColor={tc.border}
+                />
+              </div>
               <button
-                className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'logs' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+                className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'logs' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
                 onClick={() => { setView('logs'); setSidebarOpen(false); }}
               >
                 Show Poo Logs
               </button>
               <button
-                className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'charts' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+                className={`mb-2 block w-full rounded-xl px-3 py-2 text-left ${view === 'charts' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
                 onClick={() => { setView('charts'); setSidebarOpen(false); }}
               >
                 Show Charts
               </button>
               <button
-                className={`block w-full rounded-xl px-3 py-2 text-left ${view === 'trends' ? 'bg-slate-200' : 'bg-slate-50 hover:bg-slate-100'}`}
+                className={`block w-full rounded-xl px-3 py-2 text-left ${view === 'trends' ? tc.bg.tertiary : `${tc.button.secondary} ${tc.button.secondaryHover}`}`}
                 onClick={() => { setView('trends'); setSidebarOpen(false); }}
               >
                 My Trends
@@ -351,45 +492,45 @@ export default function Home() {
         )}
 
         <section className="flex-1 space-y-6">
-          <div className="rounded-xl bg-white p-6 shadow-sm">
+          <div className={`rounded-xl ${tc.bg.secondary} p-6 shadow-sm`}>
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 w-full md:w-auto">
                 <button
-                  className="md:hidden text-slate-700 hover:text-slate-900"
+                  className={`md:hidden ${tc.text.secondary}`}
                   onClick={() => setSidebarOpen(true)}
                 >
                   ☰
                 </button>
                 <div>
                   <h1 className="text-3xl font-bold">Kaki Logger</h1>
-                  <p className="text-sm text-slate-600">Welcome, {loggedInUser.name}!</p>
-                  <p className="text-sm text-slate-600">Tap a calendar date to add or update your entry.</p>
+                  <p className={`text-sm ${tc.text.secondary}`}>Welcome, {loggedInUser.name}!</p>
+                  <p className={`text-sm ${tc.text.secondary}`}>Tap a calendar date to add or update your entry.</p>
                 </div>
               </div>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end w-full">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3 w-full lg:w-auto">
                   <label className="text-sm font-medium whitespace-nowrap">Member:</label>
-                  <select
+                  <CustomSelect
                     value={currentMember?.id || ''}
-                    onChange={e => {
-                      const member = familyMembers.find(m => m.id === e.target.value)
+                    onChange={(value) => {
+                      const member = familyMembers.find(m => m.id === value)
                       setCurrentMember(member || null)
                     }}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm min-w-[10rem]"
-                  >
-                    <option value="">Select Member</option>
-                    {familyMembers.map(member => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { label: 'Select Member', value: '' },
+                      ...familyMembers.map(member => ({ label: member.name, value: member.id }))
+                    ]}
+                    className="min-w-[10rem]"
+                    textColor={tc.text.primary}
+                    bgColor={tc.bg.tertiary}
+                    borderColor={tc.border}
+                  />
                   <input
                     type="text"
                     placeholder="New member name"
                     value={newMemberName}
                     onChange={e => setNewMemberName(e.target.value)}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm min-w-[10rem]"
+                    className={`rounded-xl border ${tc.border} px-3 py-2 text-sm min-w-[10rem] ${tc.text.primary} ${tc.bg.tertiary}`}
                   />
                   {(addMemberError || removeMemberError) && (
                     <p className="text-red-500 text-sm">{addMemberError || removeMemberError}</p>
@@ -398,17 +539,19 @@ export default function Home() {
                 <div className="flex flex-wrap gap-3 items-center justify-end">
                   <button
                     onClick={addMember}
-                    className="rounded-xl bg-slate-900 px-3 py-2 text-white text-sm"
+                    className={`rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText} text-sm`}
                   >
                     Add
                   </button>
-                  <button                    onClick={removeMember}
+                  <button
+                    onClick={removeMember}
                     disabled={familyMembers.length <= 1}
                     className="rounded-xl bg-red-500 px-3 py-2 text-white text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
                     Remove
                   </button>
-                  <button                    onClick={() => {
+                  <button
+                    onClick={() => {
                       setLoggedInUser(null)
                       setCurrentMember(null)
                       setFamilyMembers([])
@@ -418,7 +561,7 @@ export default function Home() {
                   >
                     Logout
                   </button>
-                  <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 whitespace-nowrap">
+                  <div className={`rounded-full border ${tc.border} ${tc.bg.tertiary} px-4 py-2 text-sm whitespace-nowrap`}>
                     {view === 'calendar' ? 'Showing logs on calendar' : view === 'charts' ? 'Show charts' : 'Trend summary'}
                   </div>
                 </div>
@@ -427,7 +570,7 @@ export default function Home() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-            <div className="rounded-xl bg-white p-4 shadow-sm">
+            <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
               <div className="max-w-md mx-auto">
                 <Calendar onClickDay={onClickDay} tileContent={tileContent} />
               </div>
@@ -435,9 +578,9 @@ export default function Home() {
 
             <div className="space-y-6">
               {view === 'calendar' && (
-                <div className="rounded-xl bg-white p-4 shadow-sm">
+                <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
                   <h2 className="text-xl font-semibold mb-3">Quick summary</h2>
-                  <p className="text-sm text-slate-600">
+                  <p className={`text-sm ${tc.text.secondary}`}>
                     {totalLogs === 0
                       ? 'No logs yet. Click a date to start tracking.'
                       : `You have ${totalLogs} logged days. Tap any date to edit or clear the log.`}
@@ -446,24 +589,24 @@ export default function Home() {
               )}
 
               {view === 'logs' && (
-                <div className="rounded-xl bg-white p-4 shadow-sm">
+                <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
                   <h2 className="text-xl font-semibold mb-3">Poo Logs</h2>
                   {logs.length === 0 ? (
-                    <p className="text-sm text-slate-600">No logs yet.</p>
+                    <p className={`text-sm ${tc.text.secondary}`}>No logs yet.</p>
                   ) : (
                     <div className="space-y-3">
                       {logs.map(log => (
-                        <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+                        <div key={log.id} className={`flex items-center justify-between rounded-xl border ${tc.border} p-3`}>
                           <div>
                             <div className="font-medium">{log.date}</div>
-                            <div className="text-sm text-slate-600">
+                            <div className={`text-sm ${tc.text.secondary}`}>
                               {log.type.charAt(0).toUpperCase() + log.type.slice(1)} • {log.quantity} • {log.time} min
                             </div>
-                            <div className="text-xs text-slate-500">
+                            <div className={`text-xs ${tc.text.secondary}`}>
                               {log.timestamp ? new Date(log.timestamp).toLocaleString() : 'No timestamp'}
                             </div>
                           </div>
-                          <div className="flex items-center justify-center rounded-full bg-slate-100 p-2">
+                          <div className={`flex items-center justify-center rounded-full ${tc.bg.tertiary} p-2`}>
                             {getImage(log.type)}
                           </div>
                         </div>
@@ -474,7 +617,7 @@ export default function Home() {
               )}
 
               {view === 'charts' && (
-                <div className="rounded-xl bg-white p-4 shadow-sm">
+                <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
                   <h2 className="text-xl font-semibold mb-3">Show Charts</h2>
                   <div className="space-y-4">
                     {['soft', 'liquid', 'solid', 'const'].map(typeKey => {
@@ -488,8 +631,8 @@ export default function Home() {
                             </div>
                             <span>{count}</span>
                           </div>
-                          <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-                            <div className="h-3 rounded-full bg-slate-700" style={{ width }} />
+                          <div className={`h-3 overflow-hidden rounded-full ${tc.bg.tertiary}`}>
+                            <div className={`h-3 rounded-full ${theme === 'light' || theme === 'slate' ? 'bg-slate-700' : theme === 'dark' ? 'bg-white' : theme === 'ocean' ? 'bg-blue-600' : theme === 'forest' ? 'bg-green-700' : 'bg-orange-600'}`} style={{ width }} />
                           </div>
                         </div>
                       )
@@ -499,9 +642,9 @@ export default function Home() {
               )}
 
               {view === 'trends' && (
-                <div className="rounded-xl bg-white p-4 shadow-sm">
+                <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
                   <h2 className="text-xl font-semibold mb-3">My Trends</h2>
-                  <div className="space-y-3 text-sm text-slate-700">
+                  <div className={`space-y-3 text-sm ${tc.text.primary}`}>
                     <div>Total entries: <span className="font-semibold">{totalLogs}</span></div>
                     <div>Average time: <span className="font-semibold">{averageTime} min</span></div>
                     <div className="flex items-center gap-2">
@@ -521,7 +664,7 @@ export default function Home() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className={`w-full max-w-md rounded-2xl ${tc.bg.secondary} p-6 shadow-xl`}>
             <h2 className="text-xl font-semibold mb-4">Log for {selectedDate?.toDateString()} - {currentMember?.name}</h2>
             <div className="mb-4">
               <label className="block mb-2 font-medium">Type</label>
@@ -556,32 +699,38 @@ export default function Home() {
             </div>
             <div className="mb-4">
               <label className="block mb-2 font-medium">Quantity</label>
-              <select
+              <CustomSelect
                 value={quantity}
-                onChange={e => setQuantity(e.target.value as 'small' | 'medium' | 'a lot')}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2"
-              >
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="a lot">A lot</option>
-              </select>
+                onChange={(value) => setQuantity(value as 'small' | 'medium' | 'a lot')}
+                options={[
+                  { label: 'Small', value: 'small' },
+                  { label: 'Medium', value: 'medium' },
+                  { label: 'A lot', value: 'a lot' }
+                ]}
+                textColor={tc.text.primary}
+                bgColor={tc.bg.tertiary}
+                borderColor={tc.border}
+              />
             </div>
             <div className="mb-4">
               <label className="block mb-2 font-medium">Time (minutes)</label>
-              <select
-                value={time}
-                onChange={e => setTime(Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2"
-              >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-              </select>
+              <CustomSelect
+                value={String(time)}
+                onChange={(value) => setTime(Number(value))}
+                options={[
+                  { label: '5', value: '5' },
+                  { label: '10', value: '10' },
+                  { label: '20', value: '20' }
+                ]}
+                textColor={tc.text.primary}
+                bgColor={tc.bg.tertiary}
+                borderColor={tc.border}
+              />
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setShowModal(false)}
-                className="rounded-xl border border-slate-300 px-4 py-2 bg-slate-100 text-slate-700"
+                className={`rounded-xl border ${tc.border} px-4 py-2 ${tc.bg.tertiary} ${tc.text.primary}`}
               >
                 Cancel
               </button>
@@ -593,7 +742,7 @@ export default function Home() {
               </button>
               <button
                 onClick={save}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-white"
+                className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
               >
                 Save
               </button>

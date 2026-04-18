@@ -35,6 +35,7 @@ export interface User {
   name: string
   password: string // hashed
   familyMembers: FamilyMember[]
+  theme?: 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'
 }
 
 export interface Log {
@@ -197,4 +198,14 @@ export async function removeFamilyMember(userId: string, memberId: string): Prom
   
   // Also remove logs for this member
   await logsCollection.deleteMany({ memberId })
+}
+
+export async function updateUserTheme(userId: string, theme: 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'): Promise<void> {
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  
+  await collection.updateOne(
+    { id: userId },
+    { $set: { theme } }
+  )
 }

@@ -2,11 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CSS Variables for themes */
+:root {
+  --calendar-bg: white;
+  --calendar-border: #e2e8f0;
+  --calendar-text: #1e293b;
+  --calendar-tile-bg: #f8fafc;
+  --calendar-tile-hover: #f1f5f9;
+  --calendar-active-bg: #1e293b;
+  --calendar-active-text: white;
+  --calendar-now-bg: #dbeafe;
+  --calendar-now-border: #93c5fd;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --calendar-bg: #1e293b;
+  --calendar-border: #475569;
+  --calendar-text: #f1f5f9;
+  --calendar-tile-bg: #334155;
+  --calendar-tile-hover: #475569;
+  --calendar-active-bg: #3b82f6;
+  --calendar-active-text: #ffffff;
+  --calendar-now-bg: #1e3a8a;
+  --calendar-now-border: #3b82f6;
+}
+
+/* Ocean theme */
+[data-theme="ocean"] {
+  --calendar-bg: white;
+  --calendar-border: #93c5fd;
+  --calendar-text: #0c2340;
+  --calendar-tile-bg: #eff6ff;
+  --calendar-tile-hover: #dbeafe;
+  --calendar-active-bg: #0369a1;
+  --calendar-active-text: white;
+  --calendar-now-bg: #e0f2fe;
+  --calendar-now-border: #0284c7;
+}
+
+/* Forest theme */
+[data-theme="forest"] {
+  --calendar-bg: white;
+  --calendar-border: #86efac;
+  --calendar-text: #15803d;
+  --calendar-tile-bg: #f0fdf4;
+  --calendar-tile-hover: #dcfce7;
+  --calendar-active-bg: #166534;
+  --calendar-active-text: white;
+  --calendar-now-bg: #dcfce7;
+  --calendar-now-border: #22c55e;
+}
+
+/* Sunset theme */
+[data-theme="sunset"] {
+  --calendar-bg: white;
+  --calendar-border: #fed7aa;
+  --calendar-text: #92400e;
+  --calendar-tile-bg: #fffbeb;
+  --calendar-tile-hover: #fef3c7;
+  --calendar-active-bg: #b45309;
+  --calendar-active-text: white;
+  --calendar-now-bg: #fed7aa;
+  --calendar-now-border: #f97316;
+}
+
 /* Calendar styling */
 .react-calendar {
   border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  background: white;
+  border: 1px solid var(--calendar-border);
+  background: var(--calendar-bg);
+  color: var(--calendar-text);
   width: 100%;
   padding: 1rem;
   font-family: inherit;
@@ -25,18 +91,20 @@
   padding: 0.5rem 0.75rem;
   font-weight: 500;
   transition: all 0.2s ease;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: var(--calendar-tile-bg);
+  border: 1px solid var(--calendar-border);
+  color: var(--calendar-text);
   cursor: pointer;
 }
 
 .react-calendar__navigation button:hover {
-  background-color: #e2e8f0;
+  background-color: var(--calendar-tile-hover);
 }
 
 .react-calendar__navigation__label {
   font-weight: 600;
   font-size: 1.125rem;
+  color: var(--calendar-text);
 }
 
 .react-calendar__tile {
@@ -49,32 +117,93 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background-color: var(--calendar-tile-bg);
+  border: 1px solid var(--calendar-border);
+  color: var(--calendar-text);
   cursor: pointer;
 }
 
 .react-calendar__tile:hover:not([disabled]) {
-  background-color: #f1f5f9;
+  background-color: var(--calendar-tile-hover);
 }
 
 .react-calendar__tile--active {
-  background-color: #1e293b;
-  color: white;
+  background-color: var(--calendar-active-bg);
+  color: var(--calendar-active-text);
   border: none;
 }
 
 .react-calendar__tile--active:hover {
-  background-color: #0f172a;
+  opacity: 0.9;
 }
 
 .react-calendar__tile--now {
-  background-color: #dbeafe;
-  border: 1px solid #93c5fd;
+  background-color: var(--calendar-now-bg);
+  border: 1px solid var(--calendar-now-border);
 }
 
 .react-calendar__tile--disabled {
   color: #cbd5e1;
-  background-color: #f1f5f9;
+  background-color: var(--calendar-tile-bg);
   cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Form elements styling */
+input,
+select,
+textarea {
+  color: var(--calendar-text);
+  background-color: var(--calendar-tile-bg);
+  border-radius: 0.75rem;
+}
+
+input::placeholder {
+  color: var(--calendar-text);
+  opacity: 0.7;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--calendar-now-bg);
+}
+
+/* Select option styling */
+select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23f1f5f9'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1.25rem 1.25rem;
+  border-radius: 0.75rem;
+}
+
+select option {
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  background-color: var(--calendar-tile-bg);
+  color: var(--calendar-text);
+  margin: 0.25rem 0;
+}
+
+/* Rounded corners for select dropdown on supported browsers */
+select::-webkit-scrollbar {
+  width: 8px;
+}
+
+select::-webkit-scrollbar-track {
+  background: var(--calendar-tile-bg);
+  border-radius: 0.75rem;
+}
+
+select::-webkit-scrollbar-thumb {
+  background: var(--calendar-border);
+  border-radius: 0.75rem;
+}
+
+select::-webkit-scrollbar-thumb:hover {
+  background: var(--calendar-now-border);
 }
