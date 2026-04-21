@@ -101,6 +101,7 @@ export default function Home() {
 
   const [theme, setTheme] = useState<Theme>('light')
   const [showModal, setShowModal] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [type, setType] = useState('soft')
   const [time, setTime] = useState(5)
@@ -435,6 +436,301 @@ Generated on: ${new Date().toLocaleDateString()}`
     return 'Less than once a month'
   }
 
+  const generateReportHTML = async () => {
+    if (!currentMember || logs.length === 0) return
+
+    // Filter logs to only current month
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    
+    const currentMonthLogs = logs.filter(log => {
+      const logDate = new Date(log.date)
+      return logDate >= monthStart && logDate <= monthEnd
+    })
+
+    if (currentMonthLogs.length === 0) {
+      return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Kaki Logger Report</title>
+      </head>
+      <body>
+        <div style="text-align: center; padding: 40px;">
+          <h1>No logs for this month</h1>
+        </div>
+      </body>
+      </html>
+      `
+    }
+
+    // Helper function to convert and compress image to base64 with transparent background
+    const imageToBase64 = async (imagePath: string): Promise<string> => {
+      try {
+        const response = await fetch(imagePath)
+        const blob = await response.blob()
+        
+        // Create image element to load the image
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        
+        return new Promise((resolve) => {
+          img.onload = () => {
+            // Create canvas and resize image to 60x60 for reports
+            const canvas = document.createElement('canvas')
+            const targetSize = 60
+            canvas.width = targetSize
+            canvas.height = targetSize
+            
+            const ctx = canvas.getContext('2d')
+            if (ctx) {
+              // Ensure transparent background (no fillStyle)
+              ctx.clearRect(0, 0, targetSize, targetSize)
+              
+              // Draw resized image on canvas with transparent background
+              ctx.drawImage(img, 0, 0, targetSize, targetSize)
+              
+              // Convert to PNG with transparency
+              const compressedBase64 = canvas.toDataURL('image/png')
+              resolve(compressedBase64)
+            } else {
+              resolve('')
+            }
+          }
+          
+          img.onerror = () => {
+            console.log(`Could not load image: ${imagePath}`)
+            resolve('')
+          }
+          
+          // Set src to blob URL to trigger load
+          img.src = URL.createObjectURL(blob)
+        })
+      } catch (error) {
+        console.log(`Could not load image: ${imagePath}`)
+        return ''
+      }
+    }
+
+    // Pre-load all unique stool type images
+    const imageCache: Record<string, string> = {}
+    const stoolTypes = Array.from(new Set(currentMonthLogs.map(log => log.type)))
+    for (const type of stoolTypes) {
+      const imagePath = `/images/${type}.png`
+      imageCache[type] = await imageToBase64(imagePath)
+    }
+
+    const typeCounts = currentMonthLogs.reduce(
+      (counts, log) => ({ ...counts, [log.type]: (counts[log.type] ?? 0) + 1 }),
+      {} as Record<string, number>
+    )
+    const quantityCounts = currentMonthLogs.reduce(
+      (counts, log) => ({ ...counts, [log.quantity]: (counts[log.quantity] ?? 0) + 1 }),
+      {} as Record<string, number>
+    )
+    const totalLogs = currentMonthLogs.length
+    const averageTime = totalLogs ? Math.round(currentMonthLogs.reduce((sum, log) => sum + log.time, 0) / totalLogs) : 0
+    const mostCommonType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None'
+    const mostCommonQuantity = Object.entries(quantityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None'
+    const weeklyFreq = getWeeklyFrequency()
+
+    const sortedLogs = [...currentMonthLogs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    const logsHTML = sortedLogs.map(log => {
+      const imageBase64 = imageCache[log.type] || ''
+      const imageTag = imageBase64 
+        ? `<img src="${imageBase64}" alt="${log.type}" style="width: 40px; height: 40px; object-fit: contain;"/>`
+        : `<div style="width: 40px; height: 40px; background: #f3f4f6; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">${log.type.charAt(0).toUpperCase()}</div>`
+
+      return `
+      <div style="display: flex; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px;">
+        <div style="flex-shrink: 0;">
+          ${imageTag}
+        </div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; margin-bottom: 4px;">${new Date(log.date).toLocaleDateString()}</div>
+          <div style="font-size: 14px; color: #666;">Type: <strong>${log.type}</strong></div>
+          <div style="font-size: 14px; color: #666;">Quantity: <strong>${log.quantity}</strong></div>
+          <div style="font-size: 14px; color: #666;">Time: <strong>${log.time} minutes</strong></div>
+        </div>
+      </div>
+    `
+    }).join('')
+
+    const monthName = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+    const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Kaki Logger Report - ${currentMember.name} - ${monthName}</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          padding: 20px;
+          background: #f9fafb;
+          color: #1f2937;
+        }
+        .container {
+          max-width: 900px;
+          margin: 0 auto;
+          background: white;
+          border-radius: 12px;
+          padding: 30px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1 {
+          text-align: center;
+          color: #1e40af;
+          margin-bottom: 8px;
+        }
+        .member-name {
+          text-align: center;
+          color: #6b7280;
+          margin-bottom: 30px;
+          font-size: 18px;
+        }
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 16px;
+          margin-bottom: 30px;
+        }
+        .stat-card {
+          background: #f3f4f6;
+          padding: 16px;
+          border-radius: 8px;
+          border-left: 4px solid #1e40af;
+        }
+        .stat-label {
+          font-size: 14px;
+          color: #6b7280;
+          margin-bottom: 8px;
+        }
+        .stat-value {
+          font-size: 20px;
+          font-weight: 700;
+          color: #1e40af;
+        }
+        .section {
+          margin-bottom: 30px;
+        }
+        .section-title {
+          font-size: 18px;
+          font-weight: 700;
+          margin-bottom: 16px;
+          border-bottom: 2px solid #1e40af;
+          padding-bottom: 8px;
+        }
+        .logs-container {
+          max-height: 600px;
+          overflow-y: auto;
+        }
+        .footer {
+          text-align: center;
+          color: #9ca3af;
+          font-size: 12px;
+          margin-top: 40px;
+          border-top: 1px solid #e5e7eb;
+          padding-top: 20px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Kaki Logger Report</h1>
+        <div class="member-name">For: ${currentMember.name} | ${monthName}</div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Entries</div>
+            <div class="stat-value">${totalLogs}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Average Time</div>
+            <div class="stat-value">${averageTime} min</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Most Common Type</div>
+            <div class="stat-value">${mostCommonType.charAt(0).toUpperCase() + mostCommonType.slice(1)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Most Common Qty</div>
+            <div class="stat-value">${mostCommonQuantity.charAt(0).toUpperCase() + mostCommonQuantity.slice(1)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Weekly Frequency</div>
+            <div class="stat-value" style="font-size: 16px;">${weeklyFreq}</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Type Distribution</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            ${Object.entries(typeCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([type, count]) => `
+                <div style="background: #f3f4f6; padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${type}</div>
+                  <div style="font-size: 20px; font-weight: 700; color: #1e40af;">${count}</div>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Quantity Distribution</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            ${Object.entries(quantityCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([qty, count]) => `
+                <div style="background: #f3f4f6; padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${qty}</div>
+                  <div style="font-size: 20px; font-weight: 700; color: #1e40af;">${count}</div>
+                </div>
+              `).join('')}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Recent Logs (${totalLogs} total)</div>
+          <div class="logs-container">
+            ${logsHTML}
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+          <p>Kaki Logger Report</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `
+
+    return html
+  }
+
+  const downloadReport = async () => {
+    const html = await generateReportHTML()
+    if (!html) return
+
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `kaki-logger-report-${currentMember?.name}-${new Date().toISOString().split('T')[0]}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const getImage = (type: string) => {
     const pngPath = `/images/${type}.png`
     const svgPath = `/images/${type}.svg`
@@ -764,17 +1060,30 @@ Generated on: ${new Date().toLocaleDateString()}`
                 <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold">Show Charts</h2>
-                    <button
-                      onClick={shareStatistics}
-                      disabled={logs.length === 0}
-                      className={`text-sm px-3 py-2 rounded-xl ${
-                        logs.length === 0
-                          ? 'opacity-50 cursor-not-allowed'
-                          : `${tc.button.primary} ${tc.button.primaryText}`
-                      }`}
-                    >
-                      📊 Share Stats
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={downloadReport}
+                        disabled={logs.length === 0}
+                        className={`text-sm px-3 py-2 rounded-xl ${
+                          logs.length === 0
+                            ? 'opacity-50 cursor-not-allowed'
+                            : `${tc.button.secondary} ${tc.button.secondaryHover}`
+                        }`}
+                      >
+                        📥 Download Report
+                      </button>
+                      <button
+                        onClick={shareStatistics}
+                        disabled={logs.length === 0}
+                        className={`text-sm px-3 py-2 rounded-xl ${
+                          logs.length === 0
+                            ? 'opacity-50 cursor-not-allowed'
+                            : `${tc.button.primary} ${tc.button.primaryText}`
+                        }`}
+                      >
+                        📊 Share Stats
+                      </button>
+                    </div>
                   </div>
                   <div className="mb-6">
                     <h3 className="text-lg font-semibold mb-4">Stool Type Distribution</h3>
