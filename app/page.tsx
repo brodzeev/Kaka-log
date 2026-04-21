@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Calendar from 'react-calendar'
 import 'react-calendar/dist/Calendar.css'
 import CustomSelect from '../components/CustomSelect'
+import StoolChart from '../components/StoolChart'
 
 interface FamilyMember {
   id: string
@@ -289,6 +290,149 @@ export default function Home() {
     } else {
       setRemoveMemberError(result.error || 'Failed to remove member')
     }
+  }
+
+  const getChartTextColor = () => {
+    const colorMap: Record<Theme, string> = {
+      light: '#1e293b',
+      dark: '#f1f5f9',
+      slate: '#1e293b',
+      ocean: '#0c2340',
+      forest: '#15803d',
+      sunset: '#92400e'
+    }
+    return colorMap[theme]
+  }
+
+  const getChartGridColor = () => {
+    const colorMap: Record<Theme, string> = {
+      light: '#cbd5e1',
+      dark: '#475569',
+      slate: '#cbd5e1',
+      ocean: '#93c5fd',
+      forest: '#86efac',
+      sunset: '#fed7aa'
+    }
+    return colorMap[theme]
+  }
+
+  const shareStatistics = async () => {
+    if (!currentMember || logs.length === 0) return
+
+    const typeCounts = logs.reduce(
+      (counts, log) => ({ ...counts, [log.type]: (counts[log.type] ?? 0) + 1 }),
+      {} as Record<string, number>
+    )
+    const quantityCounts = logs.reduce(
+      (counts, log) => ({ ...counts, [log.quantity]: (counts[log.quantity] ?? 0) + 1 }),
+      {} as Record<string, number>
+    )
+    const totalLogs = logs.length
+    const averageTime = totalLogs ? Math.round(logs.reduce((sum, log) => sum + log.time, 0) / totalLogs) : 0
+    const mostCommonType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None'
+    const mostCommonQuantity = Object.entries(quantityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'None'
+
+    const stats = `Kaki Logger Statistics for ${currentMember.name}
+
+Total Logs: ${totalLogs}
+Average Time: ${averageTime} minutes
+Most Common Type: ${mostCommonType}
+Most Common Quantity: ${mostCommonQuantity}
+Average Weekly Frequency: ${getWeeklyFrequency()}
+
+Breakdown by Type:
+${Object.entries(typeCounts)
+  .sort((a, b) => b[1] - a[1])
+  .map(([type, count]) => `${type.charAt(0).toUpperCase() + type.slice(1)}: ${count}`)
+  .join('\n')}
+
+Breakdown by Quantity:
+${Object.entries(quantityCounts)
+  .sort((a, b) => b[1] - a[1])
+  .map(([qty, count]) => `${qty.charAt(0).toUpperCase() + qty.slice(1)}: ${count}`)
+  .join('\n')}
+
+Generated on: ${new Date().toLocaleDateString()}`
+
+    // Helper function to copy using legacy method
+    const copyToClipboardLegacy = (text: string): boolean => {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      try {
+        textarea.select()
+        const success = document.execCommand('copy')
+        document.body.removeChild(textarea)
+        return success
+      } catch (error) {
+        document.body.removeChild(textarea)
+        return false
+      }
+    }
+
+    // Try Web Share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Kaki Logger Statistics',
+          text: stats
+        })
+        return
+      } catch (error: unknown) {
+        // User cancelled or error - continue to fallback
+        if ((error as Error).name === 'AbortError') {
+          return // User cancelled
+        }
+      }
+    }
+
+    // Try modern clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(stats)
+        alert('Statistics copied to clipboard!')
+        return
+      } catch (clipboardError) {
+        console.log('Modern clipboard API failed, trying legacy method')
+      }
+    }
+
+    // Try legacy clipboard method
+    if (copyToClipboardLegacy(stats)) {
+      alert('Statistics copied to clipboard!')
+      return
+    }
+
+    // Final fallback: show statistics in an alert
+    alert(`Copy this text:\n\n${stats}`)
+  }
+
+  const getWeeklyFrequency = () => {
+    if (logs.length === 0) return 'No data'
+
+    // Get the date range
+    const sortedLogs = [...logs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const firstDate = new Date(sortedLogs[0].date)
+    const lastDate = new Date(sortedLogs[sortedLogs.length - 1].date)
+
+    // Calculate number of days between first and last log
+    const daysDiff = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)
+    const weeks = daysDiff / 7 || 1 // Ensure at least 1 week for calculation
+
+    // Calculate average logs per week
+    const logsPerWeek = logs.length / weeks
+
+    // Map to human-readable descriptions
+    if (logsPerWeek >= 6.5) return 'Every day'
+    if (logsPerWeek >= 5) return 'Almost every day'
+    if (logsPerWeek >= 3) return '3-4 times a week'
+    if (logsPerWeek >= 2) return 'Twice a week'
+    if (logsPerWeek >= 1) return 'Once a week'
+    if (logsPerWeek >= 0.5) return 'Once every 2 weeks'
+    if (logsPerWeek >= 0.33) return 'Once every 3 weeks'
+    return 'Less than once a month'
   }
 
   const getImage = (type: string) => {
@@ -618,8 +762,31 @@ export default function Home() {
 
               {view === 'charts' && (
                 <div className={`rounded-xl ${tc.bg.secondary} p-4 shadow-sm`}>
-                  <h2 className="text-xl font-semibold mb-3">Show Charts</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">Show Charts</h2>
+                    <button
+                      onClick={shareStatistics}
+                      disabled={logs.length === 0}
+                      className={`text-sm px-3 py-2 rounded-xl ${
+                        logs.length === 0
+                          ? 'opacity-50 cursor-not-allowed'
+                          : `${tc.button.primary} ${tc.button.primaryText}`
+                      }`}
+                    >
+                      📊 Share Stats
+                    </button>
+                  </div>
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold mb-4">Stool Type Distribution</h3>
+                    <StoolChart
+                      logs={logs}
+                      primaryColor={tc.bg.secondary}
+                      secondaryColor={getChartGridColor()}
+                      textColor={getChartTextColor()}
+                    />
+                  </div>
                   <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Summary</h3>
                     {['soft', 'liquid', 'solid', 'const'].map(typeKey => {
                       const count = typeCounts[typeKey] ?? 0
                       const width = totalLogs ? `${Math.round((count / totalLogs) * 100)}%` : '0%'
@@ -654,6 +821,12 @@ export default function Home() {
                       </span>
                     </div>
                     <div>Most common quantity: <span className="font-semibold">{mostCommonQuantity.charAt(0).toUpperCase() + mostCommonQuantity.slice(1)}</span></div>
+                    <div className="pt-2 border-t" style={{ borderColor: tc.border }}>
+                      <div className="font-semibold mb-1">Average Weekly Frequency:</div>
+                      <div className="text-base font-bold" style={{ color: tc.button.primary }}>
+                        {getWeeklyFrequency()}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
