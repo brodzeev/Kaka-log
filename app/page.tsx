@@ -155,11 +155,10 @@ export default function Home() {
   const onClickDay = (value: Date) => {
     if (!currentMember) return
     const dateString = value.toDateString()
-    const existingLog = logs.find(log => log.date === dateString)
     setSelectedDate(value)
-    setType(existingLog?.type ?? 'soft')
-    setTime(existingLog?.time ?? 5)
-    setQuantity(existingLog?.quantity ?? 'medium')
+    setType('soft') // Reset to default
+    setTime(5)
+    setQuantity('medium')
     setShowModal(true)
   }
 
@@ -184,16 +183,18 @@ export default function Home() {
     setShowModal(false)
   }
 
-  const clearLog = async () => {
-    if (!selectedDate || !currentMember) return
-
-    const dateString = selectedDate.toDateString()
-    await fetch(`/api/log?date=${encodeURIComponent(dateString)}&memberId=${currentMember.id}`, {
+  const deleteSingleLog = async (logId: string) => {
+    await fetch(`/api/log?logId=${logId}`, {
       method: 'DELETE'
     })
 
     await loadLogs()
-    setShowModal(false)
+  }
+
+  const getLogsForDate = (date: Date | null) => {
+    if (!date) return []
+    const dateString = date.toDateString()
+    return logs.filter(log => log.date === dateString)
   }
 
   const login = async () => {
@@ -1145,9 +1146,36 @@ Generated on: ${new Date().toLocaleDateString()}`
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-2xl ${tc.bg.secondary} p-6 shadow-xl`}>
             <h2 className="text-xl font-semibold mb-4">Log for {selectedDate?.toDateString()} - {currentMember?.name}</h2>
+            
+            {/* Display existing logs for this date */}
+            {getLogsForDate(selectedDate).length > 0 && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="font-semibold mb-3 text-sm">Existing logs for this day:</h3>
+                <div className="space-y-2">
+                  {getLogsForDate(selectedDate).map((log) => (
+                    <div key={log.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-200">
+                      <div className="text-sm">
+                        <span className="font-medium capitalize">{log.type}</span>
+                        <span className="text-gray-600 ml-2">• {log.time} min</span>
+                        <span className="text-gray-600 ml-2">• {log.quantity}</span>
+                      </div>
+                      <button
+                        onClick={() => deleteSingleLog(log.id)}
+                        className="px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 transition text-xs font-medium"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <h3 className="text-lg font-semibold mb-4">Add new log for this day</h3>
+            
             <div className="mb-4">
               <label className="block mb-2 font-medium">Type</label>
               <div className="flex flex-wrap justify-center gap-2">
@@ -1214,19 +1242,13 @@ Generated on: ${new Date().toLocaleDateString()}`
                 onClick={() => setShowModal(false)}
                 className={`rounded-xl border ${tc.border} px-4 py-2 ${tc.bg.tertiary} ${tc.text.primary}`}
               >
-                Cancel
-              </button>
-              <button
-                onClick={clearLog}
-                className="rounded-xl border border-red-300 px-4 py-2 bg-red-50 text-red-700"
-              >
-                Clear Log
+                Close
               </button>
               <button
                 onClick={save}
                 className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
               >
-                Save
+                Add Log
               </button>
             </div>
           </div>

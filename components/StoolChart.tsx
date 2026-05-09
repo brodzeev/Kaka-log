@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 interface Log {
   id: string
   date: string
@@ -18,20 +20,34 @@ interface StoolChart {
 }
 
 export default function StoolChart({ logs, primaryColor, secondaryColor, textColor }: StoolChart) {
-  // Get all dates from beginning of month to today
   const today = new Date()
-  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+  const [selectedMonth, setSelectedMonth] = useState(today.getMonth())
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear())
+
+  // Get all dates from beginning of selected month to end of month (or today if current month)
+  const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1)
+  const lastDayOfMonth = new Date(selectedYear, selectedMonth + 1, 0)
+  
+  // If current month, use today as the end date, otherwise use last day of month
+  const endDate = (selectedMonth === today.getMonth() && selectedYear === today.getFullYear()) 
+    ? today 
+    : lastDayOfMonth
   const allDates: Date[] = []
   
-  for (let d = new Date(firstDayOfMonth); d <= today; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(firstDayOfMonth); d <= endDate; d.setDate(d.getDate() + 1)) {
     allDates.push(new Date(d))
   }
 
   // Convert to date strings
   const dates = allDates.map(d => d.toDateString())
 
-  // Sort logs by date
-  const sortedLogs = [...logs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  // Filter logs for selected month and sort
+  const monthLogs = logs.filter(log => {
+    const logDate = new Date(log.date)
+    return logDate >= firstDayOfMonth && logDate <= endDate
+  })
+  
+  const sortedLogs = [...monthLogs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
   // Get stool types and include "No Kaki"
   const stoolTypes = ['soft', 'liquid', 'solid', 'const', 'no-kaki']
@@ -209,8 +225,52 @@ export default function StoolChart({ logs, primaryColor, secondaryColor, textCol
     )
   })
 
+  const previousMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11)
+      setSelectedYear(selectedYear - 1)
+    } else {
+      setSelectedMonth(selectedMonth - 1)
+    }
+  }
+
+  const nextMonth = () => {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0)
+      setSelectedYear(selectedYear + 1)
+    } else {
+      setSelectedMonth(selectedMonth + 1)
+    }
+  }
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December']
+
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={previousMonth}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+        >
+          ← Previous
+        </button>
+        <h3 className={`text-lg font-semibold ${textColor}`}>
+          {monthNames[selectedMonth]} {selectedYear}
+        </h3>
+        <button
+          onClick={nextMonth}
+          disabled={selectedMonth === today.getMonth() && selectedYear === today.getFullYear()}
+          className={`px-4 py-2 rounded transition ${
+            selectedMonth === today.getMonth() && selectedYear === today.getFullYear()
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-500 text-white hover:bg-blue-600'
+          }`}
+        >
+          Next →
+        </button>
+      </div>
+      <div className="w-full overflow-x-auto">
       <svg
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
         width="100%"
@@ -254,6 +314,7 @@ export default function StoolChart({ logs, primaryColor, secondaryColor, textCol
         {/* Points */}
         {points}
       </svg>
+      </div>
     </div>
   )
 }

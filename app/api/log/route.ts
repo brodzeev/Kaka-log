@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteLog, upsertLog } from '../../../lib/db'
+import { deleteLogById, insertLog } from '../../../lib/db'
 
 export async function POST(request: NextRequest) {
   const { date, type, time, quantity, timestamp, memberId } = await request.json()
@@ -11,21 +11,20 @@ export async function POST(request: NextRequest) {
   const logTimestamp = timestamp || new Date().toISOString()
   const logQuantity = quantity || 'medium'
 
-  await upsertLog(date, type, time, logQuantity, logTimestamp, memberId)
+  const newLog = await insertLog(date, type, time, logQuantity, logTimestamp, memberId)
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, log: newLog })
 }
 
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const date = searchParams.get('date')
-  const memberId = searchParams.get('memberId')
+  const logId = searchParams.get('logId')
 
-  if (!date || !memberId) {
-    return NextResponse.json({ success: false, error: 'Missing date or memberId' }, { status: 400 })
+  if (!logId) {
+    return NextResponse.json({ success: false, error: 'Missing logId' }, { status: 400 })
   }
 
-  await deleteLog(date, memberId)
+  await deleteLogById(logId)
 
   return NextResponse.json({ success: true })
 }
