@@ -124,6 +124,24 @@ export async function getLogs(memberId?: string): Promise<Log[]> {
   return logs.map(({ _id, ...log }) => log)
 }
 
+export async function insertLog(
+  date: string,
+  type: string,
+  time: number,
+  quantity: 'small' | 'medium' | 'a lot',
+  timestamp: string,
+  memberId: string
+): Promise<Log> {
+  const { db } = await connectToDatabase()
+  const collection: Collection<Log> = db.collection('logs')
+  
+  const logs = await collection.find({}).toArray()
+  const id = `log-${logs.length + 1}`
+  const newLog: Log = { id, date, type, time, quantity, timestamp, memberId }
+  await collection.insertOne(newLog as any)
+  return newLog
+}
+
 export async function upsertLog(
   date: string,
   type: string,
@@ -132,35 +150,21 @@ export async function upsertLog(
   timestamp: string,
   memberId: string
 ): Promise<void> {
-  const { db } = await connectToDatabase()
-  const collection: Collection<Log> = db.collection('logs')
-  
-  const existingLog = await collection.findOne({ date, memberId })
-  
-  if (existingLog) {
-    await collection.updateOne(
-      { date, memberId },
-      {
-        $set: {
-          type,
-          time,
-          quantity,
-          timestamp
-        }
-      }
-    )
-  } else {
-    const logs = await collection.find({}).toArray()
-    const id = `log-${logs.length + 1}`
-    const newLog: Log = { id, date, type, time, quantity, timestamp, memberId }
-    await collection.insertOne(newLog as any)
-  }
+  // Deprecated: Use insertLog for new logs. This function is kept for backwards compatibility.
+  await insertLog(date, type, time, quantity, timestamp, memberId)
 }
 
 export async function deleteLog(date: string, memberId: string): Promise<void> {
+  // Deprecated: Use deleteLogById instead. This function is kept for backwards compatibility.
   const { db } = await connectToDatabase()
   const collection: Collection<Log> = db.collection('logs')
   await collection.deleteOne({ date, memberId })
+}
+
+export async function deleteLogById(logId: string): Promise<void> {
+  const { db } = await connectToDatabase()
+  const collection: Collection<Log> = db.collection('logs')
+  await collection.deleteOne({ id: logId })
 }
 
 export async function addFamilyMember(userId: string, name: string): Promise<FamilyMember> {
