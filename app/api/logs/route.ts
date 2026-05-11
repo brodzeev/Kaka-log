@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getLogs, getLogsForUser, insertLog } from '../../../lib/db'
+import { getLogs, getLogsForUser, insertLog, getUsers } from '../../../lib/db'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -11,7 +11,36 @@ export async function GET(request: NextRequest) {
     
     // If userId is provided, use role-based filtering
     if (userId) {
+      // Validate that userId exists
+      const allUsers = await getUsers()
+      const user = allUsers.find(u => u.id === userId)
+      
+      if (!user) {
+        return NextResponse.json(
+          { success: false, error: 'User not found' },
+          { status: 404 }
+        )
+      }
+      
+      // Get logs using role-based access control
       logs = await getLogsForUser(userId)
+      
+      // If a specific memberId was requested, filter to only that member
+      // (This validates that the user has access to view that member's logs)
+      if (memberId) {
+        const memberIds = user.role === 'adult'
+          ? user.familyMembers.map(m => m.id)
+          : user.familyMembers.filter(m => m.role === 'child' || m.name === user.name).map(m => m.id)
+        
+        if (!memberIds.includes(memberId)) {
+          return NextResponse.json(
+            { success: false, error: 'Access denied: You cannot view this member\'s logs' },
+            { status: 403 }
+          )
+        }
+        
+        logs = logs.filter(log => log.memberId === memberId)
+      }
     } else if (memberId) {
       // Legacy support: if only memberId is provided, get logs for that member
       logs = await getLogs(memberId)

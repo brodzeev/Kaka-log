@@ -6,7 +6,9 @@ import 'react-calendar/dist/Calendar.css'
 import CustomSelect from '../components/CustomSelect'
 import StoolChart from '../components/StoolChart'
 import { GoogleSignIn } from '../components/GoogleSignIn'
+import { AppleSignIn } from '../components/AppleSignIn'
 import { LinkOAuthButton } from '../components/LinkOAuthButton'
+import { LinkAppleButton } from '../components/LinkAppleButton'
 import { saveSession, clearSession, loadSession, handleGoogleOAuth, handleAppleOAuth, type AuthSession } from '../lib/auth'
 
 interface FamilyMember {
@@ -163,6 +165,7 @@ export default function Home() {
   const [childRegisterPassword, setChildRegisterPassword] = useState('')
   const [childRegisterError, setChildRegisterError] = useState('')
   const [linkedOAuthMethods, setLinkedOAuthMethods] = useState<string[]>([])
+  const [showLinkAppleOAuth, setShowLinkAppleOAuth] = useState(false)
 
   const tc = themes[theme]
 
@@ -198,8 +201,8 @@ export default function Home() {
   }, [currentMember])
 
   const loadLogs = async () => {
-    if (!currentMember) return
-    const response = await fetch(`/api/logs?memberId=${currentMember.id}`)
+    if (!currentMember || !loggedInUser) return
+    const response = await fetch(`/api/logs?userId=${loggedInUser.id}&memberId=${currentMember.id}`)
     const data = await response.json()
     setLogs(data)
   }
@@ -395,29 +398,32 @@ export default function Home() {
     }
   }
   
-  const handleAppleSignIn = async () => {
-    // Apple Sign-In requires a more complex setup
-    // For now, show alert and provide manual input
-    const userIdentifier = prompt('Enter your Apple ID (in production, this comes from Apple SDK)')
-    const userEmail = prompt('Enter your email (Apple may hide this for privacy)')
-    
-    if (userIdentifier) {
-      try {
-        const session = await handleAppleOAuth(userIdentifier, userEmail || undefined)
-        if (session) {
-          setLoggedInUser(session.user)
-          setFamilyMembers(session.user.familyMembers)
-          setCurrentMember(session.user.familyMembers[0] || null)
-          const userTheme = (session.user.theme as Theme) || 'light'
-          setTheme(userTheme)
-          setLoginError('')
-        } else {
-          setLoginError('Apple Sign-In failed')
-        }
-      } catch (error) {
-        console.error('Apple Sign-In error:', error)
+  const handleAppleSignIn = async (credentialResponse: any) => {
+    // credentialResponse is the Apple authorization response
+    const identityToken = credentialResponse.id_token
+    const userIdentifier = credentialResponse.user?.name?.firstName || credentialResponse.user?.email || ''
+    const userEmail = credentialResponse.user?.email || ''
+
+    if (!identityToken) {
+      setLoginError('Apple Sign-In failed: Missing identity token')
+      return
+    }
+
+    try {
+      const session = await handleAppleOAuth(userIdentifier, userEmail || undefined)
+      if (session) {
+        setLoggedInUser(session.user)
+        setFamilyMembers(session.user.familyMembers)
+        setCurrentMember(session.user.familyMembers[0] || null)
+        const userTheme = (session.user.theme as Theme) || 'light'
+        setTheme(userTheme)
+        setLoginError('')
+      } else {
         setLoginError('Apple Sign-In failed')
       }
+    } catch (error) {
+      console.error('Apple Sign-In error:', error)
+      setLoginError('Apple Sign-In failed')
     }
   }
 
@@ -1087,15 +1093,12 @@ Generated on: ${new Date().toLocaleDateString()}`
                   onSuccess={handleGoogleSignIn}
                   onError={() => setLoginError('Google Sign-In failed')}
                 />
-                <button
-                  onClick={handleAppleSignIn}
-                  className={`w-full mt-2 rounded-lg border ${tc.border} px-4 py-2 font-medium flex items-center justify-center gap-2 ${tc.button.secondaryHover}`}
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <circle cx="12" cy="12" r="10" />
-                  </svg>
-                  Sign in with Apple
-                </button>
+                <div className="mt-2">
+                  <AppleSignIn
+                    onSuccess={handleAppleSignIn}
+                    onError={() => setLoginError('Apple Sign-In failed')}
+                  />
+                </div>
               </div>
               
               <div className="relative mb-6">
@@ -1831,15 +1834,25 @@ Generated on: ${new Date().toLocaleDateString()}`
                 </div>
 
                 {/* Link New OAuth Account */}
-                <div className="mt-4">
-                  {!showLinkOAuth ? (
-                    <button
-                      onClick={() => setShowLinkOAuth(true)}
-                      className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
-                    >
-                      + Link OAuth Account
-                    </button>
-                  ) : (
+                <div className="mt-4 space-y-3">
+                  {!showLinkOAuth && !showLinkAppleOAuth ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowLinkOAuth(true)}
+                        className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} flex-1`}
+                      >
+                        + Link Google
+                      </button>
+                      <button
+                        onClick={() => setShowLinkAppleOAuth(true)}
+                        className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} flex-1`}
+                      >
+                        + Link Apple
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {showLinkOAuth && (
                     <div className={`rounded-xl ${tc.bg.tertiary} p-4`}>
                       <button
                         onClick={() => setShowLinkOAuth(false)}
@@ -1852,6 +1865,25 @@ Generated on: ${new Date().toLocaleDateString()}`
                         onSuccess={(user) => {
                           setLoggedInUser(user)
                           setShowLinkOAuth(false)
+                        }}
+                        themeConfig={tc}
+                      />
+                    </div>
+                  )}
+
+                  {showLinkAppleOAuth && (
+                    <div className={`rounded-xl ${tc.bg.tertiary} p-4`}>
+                      <button
+                        onClick={() => setShowLinkAppleOAuth(false)}
+                        className={`text-sm ${tc.text.secondary} mb-3`}
+                      >
+                        ✕ Close
+                      </button>
+                      <LinkAppleButton
+                        userId={loggedInUser.id}
+                        onSuccess={(user) => {
+                          setLoggedInUser(user)
+                          setShowLinkAppleOAuth(false)
                         }}
                         themeConfig={tc}
                       />
