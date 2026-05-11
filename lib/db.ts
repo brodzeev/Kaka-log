@@ -103,6 +103,40 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   })
 }
 
+/**
+ * Normalize old users that lack new fields (role, familyMembers, authMethods, familyId)
+ * This ensures backwards compatibility with legacy user records
+ */
+export async function normalizeUser(user: any): Promise<User> {
+  const { db } = await connectToDatabase()
+  const usersCollection: Collection<User> = db.collection('users')
+  
+  // Check if user already has all required fields
+  if (user.role && user.familyMembers && user.authMethods && user.familyId) {
+    return user as User
+  }
+  
+  // Build normalized user with defaults for missing fields
+  const normalized: User = {
+    ...user,
+    id: user.id || user._id?.toString(),
+    role: user.role || 'adult', // Assume old users are adults
+    familyId: user.familyId || `family-${user.id}`, // Generate familyId if missing
+    familyMembers: user.familyMembers || [{ id: `${user.id}-member-1`, name: user.name, role: 'adult' }],
+    authMethods: user.authMethods || [{ type: 'username', linkedAt: user.createdAt || new Date().toISOString(), identifier: user.username || user.name }]
+  }
+  
+  // Save normalized user back to database to prevent repeated normalization
+  if (!user.role || !user.familyMembers || !user.authMethods || !user.familyId) {
+    await usersCollection.updateOne(
+      { id: user.id },
+      { $set: { role: normalized.role, familyId: normalized.familyId, familyMembers: normalized.familyMembers, authMethods: normalized.authMethods } }
+    )
+  }
+  
+  return normalized
+}
+
 export async function getUsers(): Promise<User[]> {
   const { db } = await connectToDatabase()
   const collection: Collection<User> = db.collection('users')
@@ -211,7 +245,10 @@ export async function authenticate(name: string, password: string): Promise<User
   if (!user || !user.password) return null
   
   const isValid = await verifyPassword(password, user.password)
-  return isValid ? { ...user, password: undefined, _id: undefined } : null
+  if (!isValid) return null
+  
+  const normalized = await normalizeUser(user)
+  return { ...normalized, password: undefined, _id: undefined }
 }
 
 export async function authenticateWithEmail(email: string, password: string): Promise<User | null> {
@@ -222,7 +259,10 @@ export async function authenticateWithEmail(email: string, password: string): Pr
   if (!user || !user.password) return null
   
   const isValid = await verifyPassword(password, user.password)
-  return isValid ? { ...user, password: undefined, _id: undefined } : null
+  if (!isValid) return null
+  
+  const normalized = await normalizeUser(user)
+  return { ...normalized, password: undefined, _id: undefined }
 }
 
 export async function getLogs(memberId?: string): Promise<Log[]> {
@@ -248,16 +288,18 @@ export async function getLogsForUser(userId: string): Promise<Log[]> {
     return []
   }
   
+  const normalized = await normalizeUser(user)
+  
   // Get IDs of all family members this user can access
   const accessibleMemberIds: string[] = []
   
-  if (user.role === 'adult') {
+  if (normalized.role === 'adult') {
     // Adults can see their own logs and all family members' logs
-    accessibleMemberIds.push(...user.familyMembers.map(m => m.id))
+    accessibleMemberIds.push(...(normalized.familyMembers || []).map(m => m.id))
   } else {
     // Children can only see their own logs
     // Find their own member ID (usually the first one with the user's name)
-    const ownMember = user.familyMembers.find(m => m.role === 'child' || m.name === user.name)
+    const ownMember = (normalized.familyMembers || []).find(m => m.role === 'child' || m.name === normalized.name)
     if (ownMember) {
       accessibleMemberIds.push(ownMember.id)
     }
@@ -315,10 +357,12 @@ export async function addFamilyMember(userId: string, name: string, role: 'adult
   const { db } = await connectToDatabase()
   const collection: Collection<User> = db.collection('users')
   
-  const user = await collection.findOne({ id: userId })
+  let user = await collection.findOne({ id: userId })
   if (!user) throw new Error('User not found')
   
-  const memberId = `${userId}-member-${user.familyMembers.length + 1}`
+  const normalized = await normalizeUser(user)
+  
+  const memberId = `${userId}-member-${(normalized.familyMembers || []).length + 1}`
   const member: FamilyMember = { id: memberId, name, role }
   
   await collection.updateOne(
@@ -334,10 +378,12 @@ export async function removeFamilyMember(userId: string, memberId: string): Prom
   const usersCollection: Collection<User> = db.collection('users')
   const logsCollection: Collection<Log> = db.collection('logs')
   
-  const user = await usersCollection.findOne({ id: userId })
+  let user = await usersCollection.findOne({ id: userId })
   if (!user) throw new Error('User not found')
   
-  if (user.familyMembers.length <= 1) throw new Error('Cannot remove the last family member')
+  const normalized = await normalizeUser(user)
+  
+  if ((normalized.familyMembers || []).length <= 1) throw new Error('Cannot remove the last family member')
   
   await usersCollection.updateOne(
     { id: userId },
@@ -461,10 +507,12 @@ export async function addChildUser(parentId: string, inviteCode: string, name: s
   
   // Get parent from invite code
   const actualParentId = codeRecord.createdBy
-  const parent = await usersCollection.findOne({ id: actualParentId })
-  if (!parent) {
+  const parentUser = await usersCollection.findOne({ id: actualParentId })
+  if (!parentUser) {
     throw new Error('Parent not found')
   }
+  
+  const parent = await normalizeUser(parentUser)
   
   if (codeRecord.familyId !== parent.familyId) {
     throw new Error('Invite code does not belong to this family')
