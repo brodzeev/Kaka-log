@@ -475,6 +475,7 @@ export async function addChildUser(parentId: string, inviteCode: string, name: s
   const childId = `user-${users.length + 1}`
   const hashedPassword = await hashPassword(password)
   
+  const childMemberId = `${childId}-member-1`
   const childUser: User = {
     id: childId,
     name,
@@ -482,13 +483,25 @@ export async function addChildUser(parentId: string, inviteCode: string, name: s
     role: 'child',
     familyId: parent.familyId,
     parentId: actualParentId,
-    familyMembers: [{ id: `${childId}-member-1`, name, role: 'child' }],
+    familyMembers: [{ id: childMemberId, name, role: 'child' }],
     authMethods: [{ type: 'username', linkedAt: new Date().toISOString(), identifier: name }],
     createdAt: new Date().toISOString(),
     accountType: 'legacy'
   }
   
   await usersCollection.insertOne(childUser as any)
+  
+  // Add child to parent's familyMembers array
+  const childFamilyMember: FamilyMember = {
+    id: childMemberId,
+    name,
+    role: 'child'
+  }
+  
+  await usersCollection.updateOne(
+    { id: actualParentId },
+    { $push: { familyMembers: childFamilyMember } }
+  )
   
   // Mark invite code as used
   await inviteCodesCollection.updateOne(
