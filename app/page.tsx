@@ -5,17 +5,41 @@ import Calendar from 'react-calendar'
 import 'react-calendar/dist/Calendar.css'
 import CustomSelect from '../components/CustomSelect'
 import StoolChart from '../components/StoolChart'
+import { GoogleSignIn } from '../components/GoogleSignIn'
+import { LinkOAuthButton } from '../components/LinkOAuthButton'
+import { saveSession, clearSession, loadSession, handleGoogleOAuth, handleAppleOAuth, type AuthSession } from '../lib/auth'
 
 interface FamilyMember {
   id: string
   name: string
 }
 
+interface AuthMethod {
+  type: 'username' | 'email' | 'google' | 'apple'
+  linkedAt: string
+  provider?: string
+  providerId?: string
+  identifier?: string
+}
+
+interface InviteCode {
+  code: string
+  familyId: string
+  createdBy: string
+  createdAt: string
+  expiresAt: string
+  usedBy?: string
+  usedAt?: string
+  active: boolean
+}
+
 interface User {
   id: string
   name: string
-  password: string
+  password?: string
+  role: 'adult' | 'child'
   familyMembers: FamilyMember[]
+  authMethods?: AuthMethod[]
   theme?: 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'
 }
 
@@ -113,9 +137,12 @@ export default function Home() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([])
   const [loginName, setLoginName] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [loginEmail, setLoginEmail] = useState('')
   const [registerName, setRegisterName] = useState('')
+  const [registerEmail, setRegisterEmail] = useState('')
   const [registerPassword, setRegisterPassword] = useState('')
   const [showRegister, setShowRegister] = useState(false)
+  const [authMethod, setAuthMethod] = useState<'legacy' | 'modern'>('legacy')
   const [loginError, setLoginError] = useState('')
   const [registerError, setRegisterError] = useState('')
   const [quantity, setQuantity] = useState<'small' | 'medium' | 'a lot'>('medium')
@@ -123,6 +150,19 @@ export default function Home() {
   const [addMemberError, setAddMemberError] = useState('')
   const [removeMemberError, setRemoveMemberError] = useState('')
   const [showAddMember, setShowAddMember] = useState(false)
+  
+  // Settings/Profile state
+  const [showSettings, setShowSettings] = useState(false)
+  const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([])
+  const [showInviteCodeForm, setShowInviteCodeForm] = useState(false)
+  const [inviteCodeError, setInviteCodeError] = useState('')
+  const [showChildRegister, setShowChildRegister] = useState(false)
+  const [childRegisterCode, setChildRegisterCode] = useState('')
+  const [showLinkOAuth, setShowLinkOAuth] = useState(false)
+  const [childRegisterName, setChildRegisterName] = useState('')
+  const [childRegisterPassword, setChildRegisterPassword] = useState('')
+  const [childRegisterError, setChildRegisterError] = useState('')
+  const [linkedOAuthMethods, setLinkedOAuthMethods] = useState<string[]>([])
 
   const tc = themes[theme]
 
@@ -131,6 +171,18 @@ export default function Home() {
     if (savedTheme && (Object.keys(themes) as Theme[]).includes(savedTheme)) {
       setTheme(savedTheme)
       document.documentElement.setAttribute('data-theme', savedTheme)
+    }
+  }, [])
+
+  useEffect(() => {
+    // Load session on mount
+    const session = loadSession()
+    if (session) {
+      setLoggedInUser(session.user as User)
+      setFamilyMembers(session.user.familyMembers)
+      setCurrentMember(session.user.familyMembers[0] || null)
+      const userTheme = (session.user.theme as Theme) || 'light'
+      setTheme(userTheme)
     }
   }, [])
 
@@ -202,7 +254,11 @@ export default function Home() {
     const response = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: loginName, password: loginPassword })
+      body: JSON.stringify({ 
+        name: loginName || undefined, 
+        email: loginEmail || undefined,
+        password: loginPassword 
+      })
     })
     const result = await response.json()
     if (result.success) {
@@ -214,7 +270,10 @@ export default function Home() {
       setTheme(userTheme)
       document.documentElement.setAttribute('data-theme', userTheme)
       localStorage.setItem('theme', userTheme)
+      // Save session
+      saveSession({ user: result.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
       setLoginName('')
+      setLoginEmail('')
       setLoginPassword('')
     } else {
       setLoginError(result.error || 'Login failed')
@@ -223,22 +282,142 @@ export default function Home() {
 
   const register = async () => {
     setRegisterError('')
-    const response = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: registerName, password: registerPassword })
-    })
-    const result = await response.json()
-    if (result.success) {
-      // After register, login
-      setLoginName(registerName)
-      setLoginPassword(registerPassword)
-      await login()
-      setShowRegister(false)
-      setRegisterName('')
-      setRegisterPassword('')
+    
+    if (authMethod === 'modern') {
+      // Email-based registration
+      if (!registerEmail || !registerPassword || !registerName) {
+        setRegisterError('Name, email, and password are required')
+        return
+      }
+      
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: registerName, 
+          email: registerEmail,
+          password: registerPassword,
+          authMethod: 'email'
+        })
+      })
+      const result = await response.json()
+      if (result.success) {
+        // Auto-login with email
+        setLoginEmail(registerEmail)
+        setLoginPassword(registerPassword)
+        setAuthMethod('modern')
+        // Use a slight delay to let state update
+        setTimeout(async () => {
+          const loginRes = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: registerEmail, password: registerPassword })
+          })
+          const loginResult = await loginRes.json()
+          if (loginResult.success) {
+            setLoggedInUser(loginResult.user)
+            setFamilyMembers(loginResult.user.familyMembers)
+            setCurrentMember(loginResult.user.familyMembers[0] || null)
+            const userTheme = (loginResult.user.theme as Theme) || 'light'
+            setTheme(userTheme)
+            saveSession({ user: loginResult.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
+            setShowRegister(false)
+            setRegisterName('')
+            setRegisterEmail('')
+            setRegisterPassword('')
+          }
+        }, 0)
+      } else {
+        setRegisterError(result.error || 'Registration failed')
+      }
     } else {
-      setRegisterError(result.error || 'Registration failed')
+      // Username-based registration (legacy)
+      if (!registerName || !registerPassword) {
+        setRegisterError('Username and password are required')
+        return
+      }
+      
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: registerName, 
+          password: registerPassword 
+        })
+      })
+      const result = await response.json()
+      if (result.success) {
+        // After register, login with username
+        setLoginName(registerName)
+        setLoginPassword(registerPassword)
+        setAuthMethod('legacy')
+        setTimeout(async () => {
+          const loginRes = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: registerName, password: registerPassword })
+          })
+          const loginResult = await loginRes.json()
+          if (loginResult.success) {
+            setLoggedInUser(loginResult.user)
+            setFamilyMembers(loginResult.user.familyMembers)
+            setCurrentMember(loginResult.user.familyMembers[0] || null)
+            const userTheme = (loginResult.user.theme as Theme) || 'light'
+            setTheme(userTheme)
+            saveSession({ user: loginResult.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
+            setShowRegister(false)
+            setRegisterName('')
+            setRegisterPassword('')
+          }
+        }, 0)
+      } else {
+        setRegisterError(result.error || 'Registration failed')
+      }
+    }
+  }
+  
+  const handleGoogleSignIn = async (credentialResponse: any) => {
+    try {
+      const session = await handleGoogleOAuth(credentialResponse)
+      if (session) {
+        setLoggedInUser(session.user)
+        setFamilyMembers(session.user.familyMembers)
+        setCurrentMember(session.user.familyMembers[0] || null)
+        const userTheme = (session.user.theme as Theme) || 'light'
+        setTheme(userTheme)
+        setLoginError('')
+      } else {
+        setLoginError('Google Sign-In failed')
+      }
+    } catch (error) {
+      console.error('Google Sign-In error:', error)
+      setLoginError('Google Sign-In failed')
+    }
+  }
+  
+  const handleAppleSignIn = async () => {
+    // Apple Sign-In requires a more complex setup
+    // For now, show alert and provide manual input
+    const userIdentifier = prompt('Enter your Apple ID (in production, this comes from Apple SDK)')
+    const userEmail = prompt('Enter your email (Apple may hide this for privacy)')
+    
+    if (userIdentifier) {
+      try {
+        const session = await handleAppleOAuth(userIdentifier, userEmail || undefined)
+        if (session) {
+          setLoggedInUser(session.user)
+          setFamilyMembers(session.user.familyMembers)
+          setCurrentMember(session.user.familyMembers[0] || null)
+          const userTheme = (session.user.theme as Theme) || 'light'
+          setTheme(userTheme)
+          setLoginError('')
+        } else {
+          setLoginError('Apple Sign-In failed')
+        }
+      } catch (error) {
+        console.error('Apple Sign-In error:', error)
+        setLoginError('Apple Sign-In failed')
+      }
     }
   }
 
@@ -259,11 +438,16 @@ export default function Home() {
 
   const addMember = async () => {
     if (!loggedInUser || !newMemberName.trim()) return
+    // Only adults can add members
+    if (loggedInUser.role !== 'adult') {
+      setAddMemberError('Only adults can add family members')
+      return
+    }
     setAddMemberError('')
     const response = await fetch('/api/family-members', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: loggedInUser.id, name: newMemberName })
+      body: JSON.stringify({ userId: loggedInUser.id, name: newMemberName, role: 'child' })
     })
     const result = await response.json()
     if (result.success) {
@@ -277,6 +461,11 @@ export default function Home() {
 
   const removeMember = async () => {
     if (!loggedInUser || !currentMember) return
+    // Only adults can remove members
+    if (loggedInUser.role !== 'adult') {
+      setRemoveMemberError('Only adults can remove family members')
+      return
+    }
     setRemoveMemberError('')
     const response = await fetch('/api/family-members', {
       method: 'DELETE',
@@ -291,6 +480,127 @@ export default function Home() {
       setLogs([]) // Clear logs since member changed
     } else {
       setRemoveMemberError(result.error || 'Failed to remove member')
+    }
+  }
+
+  // Load invite codes for adult user
+  const loadInviteCodes = async () => {
+    if (!loggedInUser) return
+    
+    // Load invite codes if adult
+    if (loggedInUser.role === 'adult') {
+      try {
+        const response = await fetch(`/api/invite-codes?userId=${loggedInUser.id}`)
+        const result = await response.json()
+        if (result.success) {
+          setInviteCodes(result.codes)
+        }
+      } catch (error) {
+        console.error('Failed to load invite codes:', error)
+      }
+    }
+    
+    // Load auth methods
+    try {
+      const response = await fetch(`/api/auth/me?userId=${loggedInUser.id}`)
+      const result = await response.json()
+      if (result.success && result.user) {
+        setLoggedInUser(prev => prev ? { ...prev, authMethods: result.user.authMethods } : null)
+      }
+    } catch (error) {
+      console.error('Failed to load auth methods:', error)
+    }
+  }
+
+  // Generate new invite code
+  const generateInviteCode = async () => {
+    if (!loggedInUser || loggedInUser.role !== 'adult') return
+    setInviteCodeError('')
+    try {
+      const response = await fetch('/api/invite-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: loggedInUser.id })
+      })
+      const result = await response.json()
+      if (result.success) {
+        setInviteCodes(prev => [...prev, result.code])
+        setShowInviteCodeForm(false)
+      } else {
+        setInviteCodeError(result.error || 'Failed to generate invite code')
+      }
+    } catch (error) {
+      setInviteCodeError('Error generating invite code')
+    }
+  }
+
+  // Revoke invite code
+  const revokeInviteCode = async (code: string) => {
+    if (!loggedInUser || loggedInUser.role !== 'adult') return
+    try {
+      const response = await fetch(`/api/invite-codes?code=${code}&userId=${loggedInUser.id}`, {
+        method: 'DELETE'
+      })
+      const result = await response.json()
+      if (result.success) {
+        setInviteCodes(prev => prev.filter(c => c.code !== code))
+      }
+    } catch (error) {
+      console.error('Failed to revoke invite code:', error)
+    }
+  }
+
+  // Register as child with invite code
+  const registerAsChild = async () => {
+    setChildRegisterError('')
+    if (!childRegisterCode || !childRegisterName || !childRegisterPassword) {
+      setChildRegisterError('All fields are required')
+      return
+    }
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: childRegisterName,
+          password: childRegisterPassword,
+          inviteCode: childRegisterCode,
+          parentId: '' // Will be determined by invite code
+        })
+      })
+      const result = await response.json()
+      if (result.success) {
+        alert('Account created! You can now log in with your credentials.')
+        setShowChildRegister(false)
+        setChildRegisterCode('')
+        setChildRegisterName('')
+        setChildRegisterPassword('')
+      } else {
+        setChildRegisterError(result.error || 'Failed to create account')
+      }
+    } catch (error) {
+      setChildRegisterError('Error creating account')
+    }
+  }
+
+  // Unlink OAuth method
+  const unlinkOAuth = async (provider: 'google' | 'apple') => {
+    if (!loggedInUser || linkedOAuthMethods.length <= 1) {
+      alert('You must keep at least one authentication method')
+      return
+    }
+    try {
+      const response = await fetch(
+        `/api/auth/link-oauth?userId=${loggedInUser.id}&provider=${provider}`,
+        { method: 'DELETE' }
+      )
+      const result = await response.json()
+      if (result.success) {
+        setLinkedOAuthMethods(prev => prev.filter(m => m !== provider))
+        setLoggedInUser(result.user)
+      }
+    } catch (error) {
+      console.error('Failed to unlink OAuth:', error)
     }
   }
 
@@ -763,69 +1073,270 @@ Generated on: ${new Date().toLocaleDateString()}`
 
   if (!loggedInUser) {
     return (
-      <main className={`min-h-screen ${tc.bg.primary} ${tc.text.primary} flex items-center justify-center`}>
-        <div className={`w-full max-w-md rounded-xl ${tc.bg.secondary} p-6 shadow-sm`}>
-          <h1 className="text-2xl font-bold mb-6 text-center">Kaki Logger</h1>
+      <main className={`min-h-screen ${tc.bg.primary} ${tc.text.primary} flex items-center justify-center p-4`}>
+        <div className={`w-full max-w-md rounded-xl ${tc.bg.secondary} p-8 shadow-sm`}>
+          <h1 className="text-3xl font-bold mb-2 text-center">Kaki Logger</h1>
+          <p className="text-center text-sm mb-6 opacity-70">Family stool logging app</p>
+          
           {!showRegister ? (
             <>
-              <h2 className="text-lg font-semibold mb-4">Login</h2>
-              <input
-                type="text"
-                placeholder="Username"
-                value={loginName}
-                onChange={e => setLoginName(e.target.value)}
-                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginPassword}
-                onChange={e => setLoginPassword(e.target.value)}
-                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
-              />
-              {loginError && <p className="text-red-500 text-sm mb-3">{loginError}</p>}
+              {/* OAuth Sign-In Section */}
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold mb-4">Sign In</h2>
+                <GoogleSignIn
+                  onSuccess={handleGoogleSignIn}
+                  onError={() => setLoginError('Google Sign-In failed')}
+                />
+                <button
+                  onClick={handleAppleSignIn}
+                  className={`w-full mt-2 rounded-lg border ${tc.border} px-4 py-2 font-medium flex items-center justify-center gap-2 ${tc.button.secondaryHover}`}
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                  Sign in with Apple
+                </button>
+              </div>
+              
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className={`w-full border-t ${tc.border}`}></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className={`${tc.bg.secondary} px-2 opacity-70`}>Or</span>
+                </div>
+              </div>
+              
+              {/* Username Sign-In Section (Legacy) */}
+              {authMethod === 'legacy' && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold mb-3">Username Sign-In</h3>
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={loginName}
+                    onChange={e => setLoginName(e.target.value)}
+                    className={`w-full mb-2 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                </div>
+              )}
+              
+              {/* Email Sign-In Section (Modern) */}
+              {authMethod === 'modern' && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold mb-3">Email Sign-In</h3>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={loginEmail}
+                    onChange={e => setLoginEmail(e.target.value)}
+                    className={`w-full mb-2 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                </div>
+              )}
+              
+              {loginError && <p className="text-red-500 text-sm mb-4">{loginError}</p>}
+              
+              {/* Sign In Button */}
               <button
                 onClick={login}
-                className={`w-full mb-3 rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText}`}
+                className={`w-full mb-3 rounded-lg ${tc.button.primary} px-3 py-2 font-medium ${tc.button.primaryText}`}
               >
-                Login
+                Sign In
               </button>
-              <button
-                onClick={() => setShowRegister(true)}
-                className={`w-full rounded-xl ${tc.button.secondary} px-3 py-2 ${tc.text.primary} ${tc.button.secondaryHover}`}
-              >
-                Register
-              </button>
+              
+              {/* Auth Method Toggle */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => { setAuthMethod('legacy'); setLoginEmail(''); setLoginError('') }}
+                  className={`flex-1 rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                    authMethod === 'legacy'
+                      ? `${tc.button.primary} ${tc.button.primaryText}`
+                      : `border ${tc.border} ${tc.button.secondaryHover}`
+                  }`}
+                >
+                  Username
+                </button>
+                <button
+                  onClick={() => { setAuthMethod('modern'); setLoginName(''); setLoginError('') }}
+                  className={`flex-1 rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                    authMethod === 'modern'
+                      ? `${tc.button.primary} ${tc.button.primaryText}`
+                      : `border ${tc.border} ${tc.button.secondaryHover}`
+                  }`}
+                >
+                  Email
+                </button>
+              </div>
+              
+              {/* Register Switch */}
+              <div className="text-center">
+                <p className="text-sm opacity-70">Don&apos;t have an account?</p>
+                <button
+                  onClick={() => setShowRegister(true)}
+                  className={`text-sm font-medium mt-1 ${tc.button.primary}`}
+                >
+                  Create one
+                </button>
+              </div>
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold mb-4">Register</h2>
-              <input
-                type="text"
-                placeholder="Username"
-                value={registerName}
-                onChange={e => setRegisterName(e.target.value)}
-                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={registerPassword}
-                onChange={e => setRegisterPassword(e.target.value)}
-                className={`w-full mb-3 rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
-              />
+              <h2 className="text-lg font-semibold mb-4">Create Account</h2>
+              
+              {/* Registration Method Selection */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => { setAuthMethod('legacy'); setRegisterEmail(''); setRegisterError(''); setShowChildRegister(false) }}
+                  className={`flex-1 rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                    authMethod === 'legacy' && !showChildRegister
+                      ? `${tc.button.primary} ${tc.button.primaryText}`
+                      : `border ${tc.border} ${tc.button.secondaryHover}`
+                  }`}
+                >
+                  Username
+                </button>
+                <button
+                  onClick={() => { setAuthMethod('modern'); setRegisterError(''); setShowChildRegister(false) }}
+                  className={`flex-1 rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                    authMethod === 'modern' && !showChildRegister
+                      ? `${tc.button.primary} ${tc.button.primaryText}`
+                      : `border ${tc.border} ${tc.button.secondaryHover}`
+                  }`}
+                >
+                  Email
+                </button>
+                <button
+                  onClick={() => { setShowChildRegister(true); setRegisterError('') }}
+                  className={`flex-1 rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                    showChildRegister
+                      ? `${tc.button.primary} ${tc.button.primaryText}`
+                      : `border ${tc.border} ${tc.button.secondaryHover}`
+                  }`}
+                >
+                  Child
+                </button>
+              </div>
+              
+              {/* Child Registration with Invite Code */}
+              {showChildRegister && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Invite Code"
+                    value={childRegisterCode}
+                    onChange={e => setChildRegisterCode(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Your Name"
+                    value={childRegisterName}
+                    onChange={e => setChildRegisterName(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={childRegisterPassword}
+                    onChange={e => setChildRegisterPassword(e.target.value)}
+                    className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                </>
+              )}
+              
+              {/* Username Registration */}
+              {authMethod === 'legacy' && !showChildRegister && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={registerName}
+                    onChange={e => setRegisterName(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={registerPassword}
+                    onChange={e => setRegisterPassword(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                </>
+              )}
+              
+              {/* Email Registration */}
+              {authMethod === 'modern' && !showChildRegister && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Display Name"
+                    value={registerName}
+                    onChange={e => setRegisterName(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={registerEmail}
+                    onChange={e => setRegisterEmail(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={registerPassword}
+                    onChange={e => setRegisterPassword(e.target.value)}
+                    className={`w-full mb-3 rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                  />
+                </>
+              )}
+              
               {registerError && <p className="text-red-500 text-sm mb-3">{registerError}</p>}
+              {childRegisterError && <p className="text-red-500 text-sm mb-3">{childRegisterError}</p>}
+              
               <button
-                onClick={register}
-                className={`w-full mb-3 rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText}`}
+                onClick={() => {
+                  if (showChildRegister) {
+                    registerAsChild()
+                  } else {
+                    register()
+                  }
+                }}
+                className={`w-full mb-3 rounded-lg ${tc.button.primary} px-3 py-2 font-medium ${tc.button.primaryText}`}
               >
-                Register
+                {showChildRegister ? 'Join Family' : 'Create Account'}
               </button>
               <button
-                onClick={() => setShowRegister(false)}
-                className={`w-full rounded-xl ${tc.button.secondary} px-3 py-2 ${tc.text.primary} ${tc.button.secondaryHover}`}
+                onClick={() => {
+                  setShowRegister(false)
+                  setRegisterName('')
+                  setRegisterEmail('')
+                  setRegisterPassword('')
+                  setRegisterError('')
+                  setChildRegisterCode('')
+                  setChildRegisterName('')
+                  setChildRegisterPassword('')
+                  setChildRegisterError('')
+                  setShowChildRegister(false)
+                }}
+                className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.button.secondaryHover}`}
               >
-                Back to Login
+                Back to Sign In
               </button>
             </>
           )}
@@ -951,48 +1462,75 @@ Generated on: ${new Date().toLocaleDateString()}`
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end w-full">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3 w-full lg:w-auto">
                   <label className="text-sm font-medium whitespace-nowrap">Member:</label>
-                  <CustomSelect
-                    value={currentMember?.id || ''}
-                    onChange={(value) => {
-                      const member = familyMembers.find(m => m.id === value)
-                      setCurrentMember(member || null)
-                    }}
-                    options={[
-                      { label: 'Select Member', value: '' },
-                      ...familyMembers.map(member => ({ label: member.name, value: member.id }))
-                    ]}
-                    className="min-w-[10rem]"
-                    textColor={tc.text.primary}
-                    bgColor={tc.bg.tertiary}
-                    borderColor={tc.border}
-                  />
-                  <input
-                    type="text"
-                    placeholder="New member name"
-                    value={newMemberName}
-                    onChange={e => setNewMemberName(e.target.value)}
-                    className={`rounded-xl border ${tc.border} px-3 py-2 text-sm min-w-[10rem] ${tc.text.primary} ${tc.bg.tertiary}`}
-                  />
-                  {(addMemberError || removeMemberError) && (
-                    <p className="text-red-500 text-sm">{addMemberError || removeMemberError}</p>
+                  {(() => {
+                    // Filter family members based on user role
+                    const accessibleMembers = loggedInUser?.role === 'child' 
+                      ? familyMembers.filter(m => m.name === loggedInUser?.name)
+                      : familyMembers
+                    
+                    return (
+                      <CustomSelect
+                        value={currentMember?.id || ''}
+                        onChange={(value) => {
+                          const member = accessibleMembers.find(m => m.id === value)
+                          setCurrentMember(member || null)
+                        }}
+                        options={[
+                          { label: 'Select Member', value: '' },
+                          ...accessibleMembers.map(member => ({ label: member.name, value: member.id }))
+                        ]}
+                        className="min-w-[10rem]"
+                        textColor={tc.text.primary}
+                        bgColor={tc.bg.tertiary}
+                        borderColor={tc.border}
+                      />
+                    )
+                  })()}
+                  {loggedInUser?.role === 'adult' && (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="New member name"
+                        value={newMemberName}
+                        onChange={e => setNewMemberName(e.target.value)}
+                        className={`rounded-xl border ${tc.border} px-3 py-2 text-sm min-w-[10rem] ${tc.text.primary} ${tc.bg.tertiary}`}
+                      />
+                      {(addMemberError || removeMemberError) && (
+                        <p className="text-red-500 text-sm">{addMemberError || removeMemberError}</p>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-3 items-center justify-end">
+                  {loggedInUser?.role === 'adult' && (
+                    <>
+                      <button
+                        onClick={addMember}
+                        className={`rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText} text-sm`}
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={removeMember}
+                        disabled={familyMembers.length <= 1}
+                        className="rounded-xl bg-red-500 px-3 py-2 text-white text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
                   <button
-                    onClick={addMember}
+                    onClick={() => {
+                      setShowSettings(true)
+                      loadInviteCodes()
+                    }}
                     className={`rounded-xl ${tc.button.primary} px-3 py-2 ${tc.button.primaryText} text-sm`}
                   >
-                    Add
-                  </button>
-                  <button
-                    onClick={removeMember}
-                    disabled={familyMembers.length <= 1}
-                    className="rounded-xl bg-red-500 px-3 py-2 text-white text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    Remove
+                    ⚙️ Settings
                   </button>
                   <button
                     onClick={() => {
+                      clearSession()
                       setLoggedInUser(null)
                       setCurrentMember(null)
                       setFamilyMembers([])
@@ -1251,6 +1789,195 @@ Generated on: ${new Date().toLocaleDateString()}`
                 Add Log
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className={`w-full max-w-2xl rounded-xl ${tc.bg.secondary} p-6 max-h-[90vh] overflow-y-auto`}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Settings</h2>
+              <button onClick={() => setShowSettings(false)} className={`text-2xl ${tc.text.secondary}`}>✕</button>
+            </div>
+
+            {/* Linked Accounts Section - Show for all users */}
+            {loggedInUser && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4">Linked Accounts</h3>
+                <div className={`rounded-xl ${tc.bg.tertiary} p-4 space-y-3`}>
+                  {loggedInUser.authMethods && loggedInUser.authMethods.length > 0 ? (
+                    loggedInUser.authMethods.map(method => (
+                      <div key={method.type} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium capitalize">{method.type === 'username' ? 'Username/Password' : method.type}</p>
+                          {method.identifier && <p className={`text-sm ${tc.text.secondary}`}>{method.identifier}</p>}
+                          <p className={`text-xs ${tc.text.secondary}`}>Linked {new Date(method.linkedAt).toLocaleDateString()}</p>
+                        </div>
+                        {(loggedInUser.authMethods?.length ?? 0) > 1 && (
+                          <button
+                            onClick={() => unlinkOAuth(method.type as 'google' | 'apple')}
+                            className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                          >
+                            Unlink
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className={`text-sm ${tc.text.secondary}`}>No linked accounts</p>
+                  )}
+                </div>
+
+                {/* Link New OAuth Account */}
+                <div className="mt-4">
+                  {!showLinkOAuth ? (
+                    <button
+                      onClick={() => setShowLinkOAuth(true)}
+                      className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
+                    >
+                      + Link OAuth Account
+                    </button>
+                  ) : (
+                    <div className={`rounded-xl ${tc.bg.tertiary} p-4`}>
+                      <button
+                        onClick={() => setShowLinkOAuth(false)}
+                        className={`text-sm ${tc.text.secondary} mb-3`}
+                      >
+                        ✕ Close
+                      </button>
+                      <LinkOAuthButton
+                        userId={loggedInUser.id}
+                        onSuccess={(user) => {
+                          setLoggedInUser(user)
+                          setShowLinkOAuth(false)
+                        }}
+                        themeConfig={tc}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Invite Codes Section (Adults Only) */}
+            {loggedInUser?.role === 'adult' && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4">Invite Codes for Children</h3>
+                
+                {!showInviteCodeForm ? (
+                  <button
+                    onClick={() => setShowInviteCodeForm(true)}
+                    className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} mb-4`}
+                  >
+                    + Generate New Code
+                  </button>
+                ) : (
+                  <div className={`rounded-xl ${tc.bg.tertiary} p-4 mb-4`}>
+                    {inviteCodeError && <p className="text-red-500 text-sm mb-2">{inviteCodeError}</p>}
+                    <button
+                      onClick={generateInviteCode}
+                      className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} mr-2`}
+                    >
+                      Generate Code
+                    </button>
+                    <button
+                      onClick={() => setShowInviteCodeForm(false)}
+                      className={`rounded-xl ${tc.button.secondary} px-4 py-2`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                <div className={`rounded-xl ${tc.bg.tertiary} p-4 space-y-2`}>
+                  {inviteCodes.length > 0 ? (
+                    inviteCodes.map(code => (
+                      <div key={code.code} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <p className="font-mono font-semibold">{code.code}</p>
+                          <p className={`text-xs ${tc.text.secondary}`}>
+                            Expires: {new Date(code.expiresAt).toLocaleDateString()}
+                            {code.usedBy && ` • Used by: ${code.usedBy}`}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => revokeInviteCode(code.code)}
+                          className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className={`text-sm ${tc.text.secondary}`}>No active invite codes</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Child Registration Section (For non-logged-in users) */}
+            {!loggedInUser && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4">Register as Child</h3>
+                <button
+                  onClick={() => setShowChildRegister(!showChildRegister)}
+                  className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
+                >
+                  {showChildRegister ? 'Cancel' : 'Join Family with Invite Code'}
+                </button>
+
+                {showChildRegister && (
+                  <div className={`rounded-xl ${tc.bg.tertiary} p-4 mt-4 space-y-3`}>
+                    {childRegisterError && <p className="text-red-500 text-sm">{childRegisterError}</p>}
+                    <input
+                      type="text"
+                      placeholder="Invite Code"
+                      value={childRegisterCode}
+                      onChange={e => setChildRegisterCode(e.target.value)}
+                      className={`w-full rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.secondary}`}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Your Name"
+                      value={childRegisterName}
+                      onChange={e => setChildRegisterName(e.target.value)}
+                      className={`w-full rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.secondary}`}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={childRegisterPassword}
+                      onChange={e => setChildRegisterPassword(e.target.value)}
+                      className={`w-full rounded-xl border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.secondary}`}
+                    />
+                    <button
+                      onClick={registerAsChild}
+                      className={`w-full rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
+                    >
+                      Create Account
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Info message for child users */}
+            {loggedInUser?.role === 'child' && (
+              <div className={`mb-6 p-4 rounded-xl ${tc.bg.tertiary} border-l-4 border-blue-500`}>
+                <p className={`text-sm ${tc.text.secondary}`}>
+                  Your account is a child account. The available settings are limited to viewing your linked authentication methods.
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowSettings(false)}
+              className={`w-full rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText}`}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
