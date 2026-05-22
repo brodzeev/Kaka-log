@@ -1,4 +1,5 @@
 import { authenticate, authenticateWithEmail } from '../../../lib/db'
+import { generateToken } from '../../../lib/tokens'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
@@ -17,7 +18,28 @@ export async function POST(request: NextRequest) {
     }
     
     if (user) {
-      return NextResponse.json({ success: true, user })
+      // Generate JWT tokens
+      const accessToken = generateToken(user, 'access')
+      const refreshToken = generateToken(user, 'refresh')
+      
+      // Set refresh token as HttpOnly cookie
+      const response = NextResponse.json({ 
+        success: true, 
+        user,
+        accessToken,
+        expiresIn: 3600 // 1 hour in seconds
+      })
+      
+      response.cookies.set({
+        name: 'refreshToken',
+        value: refreshToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 // 30 days
+      })
+      
+      return response
     } else {
       return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 })
     }

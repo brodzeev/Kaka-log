@@ -18,13 +18,14 @@ export interface AuthSession {
     role: 'adult' | 'child'
     familyMembers: FamilyMember[]
     theme?: Theme
+    authMethods?: any[]
   }
-  token?: string
+  accessToken?: string
   expiresAt?: number
 }
 
 const SESSION_KEY = 'kaki_logger_session'
-const TOKEN_KEY = 'kaki_logger_token'
+const ACCESS_TOKEN_KEY = 'kaki_logger_access_token'
 
 /**
  * Save session to localStorage
@@ -33,8 +34,8 @@ export function saveSession(session: AuthSession): void {
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-    if (session.token) {
-      localStorage.setItem(TOKEN_KEY, session.token)
+    if (session.accessToken) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, session.accessToken)
     }
   } catch (error) {
     console.error('Failed to save session:', error)
@@ -72,22 +73,39 @@ export function clearSession(): void {
   if (typeof window === 'undefined') return
   try {
     localStorage.removeItem(SESSION_KEY)
-    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(ACCESS_TOKEN_KEY)
   } catch (error) {
     console.error('Failed to clear session:', error)
   }
 }
 
 /**
- * Get stored token
+ * Get stored access token
  */
-export function getToken(): string | null {
+export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    return localStorage.getItem(ACCESS_TOKEN_KEY)
   } catch (error) {
     console.error('Failed to get token:', error)
     return null
+  }
+}
+
+/**
+ * Update access token
+ */
+export function updateAccessToken(token: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    const session = loadSession()
+    if (session) {
+      session.accessToken = token
+      saveSession(session)
+    }
+  } catch (error) {
+    console.error('Failed to update token:', error)
   }
 }
 
@@ -108,6 +126,68 @@ export function decodeToken(token: string): Record<string, any> | null {
 }
 
 /**
+ * Refresh access token from server
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearSession()
+      }
+      return null
+    }
+    
+    const result = await response.json()
+    if (result.success && result.accessToken) {
+      updateAccessToken(result.accessToken)
+      return result.accessToken
+    }
+  } catch (error) {
+    console.error('Token refresh failed:', error)
+  }
+  return null
+}
+
+/**
+ * Check if token is expired based on payload
+ */
+export function isTokenExpired(token: string): boolean {
+  const payload = decodeToken(token)
+  if (!payload || !payload.exp) return true
+  
+  const now = Math.floor(Date.now() / 1000)
+  return payload.exp < now
+}
+
+/**
+ * Check if token will expire soon (within 5 minutes)
+ */
+export function willTokenExpireSoon(token: string): boolean {
+  const payload = decodeToken(token)
+  if (!payload || !payload.exp) return true
+  
+  const now = Math.floor(Date.now() / 1000)
+  const timeUntilExpiry = payload.exp - now
+  return timeUntilExpiry < 5 * 60 // Less than 5 minutes
+}
+
+/**
+ * Get authorization header with token
+ */
+export function getAuthHeader(): Record<string, string> {
+  const token = getAccessToken()
+  if (token) {
+    return { 'Authorization': `Bearer ${token}` }
+  }
+  return {}
+}
+
+/**
  * Handle Google OAuth response
  */
 export async function handleGoogleOAuth(credentialResponse: any): Promise<AuthSession | null> {
@@ -120,10 +200,11 @@ export async function handleGoogleOAuth(credentialResponse: any): Promise<AuthSe
     
     const result = await response.json()
     if (result.success && result.user) {
+      const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
       const session: AuthSession = {
         user: result.user,
-        token: generateLocalToken(result.user),
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+        accessToken: result.accessToken,
+        expiresAt
       }
       saveSession(session)
       return session
@@ -150,10 +231,11 @@ export async function handleAppleOAuth(userIdentifier: string, userEmail?: strin
     
     const result = await response.json()
     if (result.success && result.user) {
+      const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
       const session: AuthSession = {
         user: result.user,
-        token: generateLocalToken(result.user),
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+        accessToken: result.accessToken,
+        expiresAt
       }
       saveSession(session)
       return session
@@ -162,36 +244,4 @@ export async function handleAppleOAuth(userIdentifier: string, userEmail?: strin
     console.error('Apple OAuth error:', error)
   }
   return null
-}
-
-/**
- * Generate a local JWT token (basic implementation)
- * In production, this should come from the server
- */
-function generateLocalToken(user: any): string {
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const payload = btoa(JSON.stringify({
-    sub: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 86400 // 24 hours
-  }))
-  const signature = 'local' // This should be signed on server in production
-  
-  return `${header}.${payload}.${signature}`
-}
-
-/**
- * Check if session is still valid
- */
-export function isSessionValid(): boolean {
-  const session = loadSession()
-  if (!session) return false
-  if (session.expiresAt && session.expiresAt < Date.now()) {
-    clearSession()
-    return false
-  }
-  return true
 }

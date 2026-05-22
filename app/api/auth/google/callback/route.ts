@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { OAuth2Client } from 'google-auth-library'
 import { getUserByGoogleId, getUserByEmail, addUserWithOAuth, linkOAuthToUser } from '../../../../../lib/db'
+import { generateToken } from '../../../../../lib/tokens'
 
 /**
  * Google OAuth Callback Handler
@@ -46,7 +47,26 @@ export async function POST(request: NextRequest) {
 
     if (user) {
       // User exists, log them in
-      return NextResponse.json({ success: true, user })
+      const appAccessToken = generateToken(user, 'access')
+      const refreshToken = generateToken(user, 'refresh')
+      
+      const response = NextResponse.json({ 
+        success: true, 
+        user,
+        accessToken: appAccessToken,
+        expiresIn: 3600
+      })
+      
+      response.cookies.set({
+        name: 'refreshToken',
+        value: refreshToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60
+      })
+      
+      return response
     }
 
     // Check if user exists by email - offer to link accounts
@@ -69,7 +89,27 @@ export async function POST(request: NextRequest) {
       payload.sub
     )
 
-    return NextResponse.json({ success: true, user, isNewAccount: true })
+    const appAccessToken = generateToken(user, 'access')
+    const refreshToken = generateToken(user, 'refresh')
+    
+    const response = NextResponse.json({ 
+      success: true, 
+      user, 
+      isNewAccount: true,
+      accessToken: appAccessToken,
+      expiresIn: 3600
+    })
+    
+    response.cookies.set({
+      name: 'refreshToken',
+      value: refreshToken,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60
+    })
+
+    return response
   } catch (error: any) {
     console.error('Google OAuth error:', error)
     return NextResponse.json(

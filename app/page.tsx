@@ -273,8 +273,13 @@ export default function Home() {
       setTheme(userTheme)
       document.documentElement.setAttribute('data-theme', userTheme)
       localStorage.setItem('theme', userTheme)
-      // Save session
-      saveSession({ user: result.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
+      // Save session with access token
+      const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
+      saveSession({ 
+        user: result.user, 
+        accessToken: result.accessToken,
+        expiresAt
+      })
       setLoginName('')
       setLoginEmail('')
       setLoginPassword('')
