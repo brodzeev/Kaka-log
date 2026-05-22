@@ -310,31 +310,27 @@ export default function Home() {
       })
       const result = await response.json()
       if (result.success) {
-        // Auto-login with email
-        setLoginEmail(registerEmail)
-        setLoginPassword(registerPassword)
-        setAuthMethod('modern')
-        // Use a slight delay to let state update
-        setTimeout(async () => {
-          const loginRes = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: registerEmail, password: registerPassword })
-          })
-          const loginResult = await loginRes.json()
-          if (loginResult.success) {
-            setLoggedInUser(loginResult.user)
-            setFamilyMembers(loginResult.user.familyMembers)
-            setCurrentMember(loginResult.user.familyMembers[0] || null)
-            const userTheme = (loginResult.user.theme as Theme) || 'light'
-            setTheme(userTheme)
-            saveSession({ user: loginResult.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
-            setShowRegister(false)
-            setRegisterName('')
-            setRegisterEmail('')
-            setRegisterPassword('')
-          }
-        }, 0)
+        // Auto-login with token from registration
+        setLoggedInUser(result.user)
+        setFamilyMembers(result.user.familyMembers)
+        setCurrentMember(result.user.familyMembers[0] || null)
+        const userTheme = (result.user.theme as Theme) || 'light'
+        setTheme(userTheme)
+        document.documentElement.setAttribute('data-theme', userTheme)
+        localStorage.setItem('theme', userTheme)
+        
+        // Save session with access token
+        const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
+        saveSession({ 
+          user: result.user, 
+          accessToken: result.accessToken,
+          expiresAt
+        })
+        
+        setShowRegister(false)
+        setRegisterName('')
+        setRegisterEmail('')
+        setRegisterPassword('')
       } else {
         setRegisterError(result.error || 'Registration failed')
       }
@@ -355,29 +351,26 @@ export default function Home() {
       })
       const result = await response.json()
       if (result.success) {
-        // After register, login with username
-        setLoginName(registerName)
-        setLoginPassword(registerPassword)
-        setAuthMethod('legacy')
-        setTimeout(async () => {
-          const loginRes = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: registerName, password: registerPassword })
-          })
-          const loginResult = await loginRes.json()
-          if (loginResult.success) {
-            setLoggedInUser(loginResult.user)
-            setFamilyMembers(loginResult.user.familyMembers)
-            setCurrentMember(loginResult.user.familyMembers[0] || null)
-            const userTheme = (loginResult.user.theme as Theme) || 'light'
-            setTheme(userTheme)
-            saveSession({ user: loginResult.user, expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
-            setShowRegister(false)
-            setRegisterName('')
-            setRegisterPassword('')
-          }
-        }, 0)
+        // Auto-login with token from registration
+        setLoggedInUser(result.user)
+        setFamilyMembers(result.user.familyMembers)
+        setCurrentMember(result.user.familyMembers[0] || null)
+        const userTheme = (result.user.theme as Theme) || 'light'
+        setTheme(userTheme)
+        document.documentElement.setAttribute('data-theme', userTheme)
+        localStorage.setItem('theme', userTheme)
+        
+        // Save session with access token
+        const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
+        saveSession({ 
+          user: result.user, 
+          accessToken: result.accessToken,
+          expiresAt
+        })
+        
+        setShowRegister(false)
+        setRegisterName('')
+        setRegisterPassword('')
       } else {
         setRegisterError(result.error || 'Registration failed')
       }
@@ -581,7 +574,26 @@ export default function Home() {
       })
       const result = await response.json()
       if (result.success) {
-        alert('Account created! You can now log in with your credentials.')
+        // Auto-login the child account
+        setLoggedInUser(result.user)
+        setFamilyMembers(result.user.familyMembers)
+        setCurrentMember(result.user.familyMembers[0] || null)
+        
+        // Set theme from user preference or default to light
+        const userTheme = (result.user.theme as Theme) || 'light'
+        setTheme(userTheme)
+        document.documentElement.setAttribute('data-theme', userTheme)
+        localStorage.setItem('theme', userTheme)
+        
+        // Save session with access token (child account still gets JWT tokens)
+        const expiresAt = result.expiresIn ? Date.now() + result.expiresIn * 1000 : Date.now() + 24 * 60 * 60 * 1000
+        saveSession({ 
+          user: result.user, 
+          accessToken: result.accessToken,
+          expiresAt
+        })
+        
+        // Clear form and hide UI
         setShowChildRegister(false)
         setChildRegisterCode('')
         setChildRegisterName('')

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { addUser, addUserWithEmail, addChildUser, getUsers } from '../../../lib/db'
+import { generateToken } from '../../../lib/tokens'
 
 export async function GET() {
   const users = await getUsers()
@@ -20,7 +21,30 @@ export async function POST(request: NextRequest) {
       }
 
       const child = await addChildUser(parentId || '', inviteCode, name.trim(), password.trim())
-      return NextResponse.json({ success: true, user: child, isChild: true })
+      
+      // Generate JWT tokens for child
+      const appAccessToken = generateToken(child, 'access')
+      const refreshToken = generateToken(child, 'refresh')
+      
+      const response = NextResponse.json({ 
+        success: true, 
+        user: child, 
+        isChild: true,
+        accessToken: appAccessToken,
+        expiresIn: 3600
+      })
+      
+      // Set refresh token cookie
+      response.cookies.set({
+        name: 'refreshToken',
+        value: refreshToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60
+      })
+      
+      return response
     }
 
     // Email-based registration
@@ -34,7 +58,28 @@ export async function POST(request: NextRequest) {
       }
       
       const user = await addUserWithEmail(trimmedName, trimmedEmail, trimmedPassword)
-      return NextResponse.json({ success: true, user })
+      
+      // Generate JWT tokens
+      const appAccessToken = generateToken(user, 'access')
+      const refreshToken = generateToken(user, 'refresh')
+      
+      const response = NextResponse.json({ 
+        success: true, 
+        user,
+        accessToken: appAccessToken,
+        expiresIn: 3600
+      })
+      
+      response.cookies.set({
+        name: 'refreshToken',
+        value: refreshToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60
+      })
+      
+      return response
     }
     
     // Username-based registration (legacy)
@@ -45,7 +90,28 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await addUser(trimmedName, trimmedPassword)
-    return NextResponse.json({ success: true, user })
+    
+    // Generate JWT tokens
+    const appAccessToken = generateToken(user, 'access')
+    const refreshToken = generateToken(user, 'refresh')
+    
+    const response = NextResponse.json({ 
+      success: true, 
+      user,
+      accessToken: appAccessToken,
+      expiresIn: 3600
+    })
+    
+    response.cookies.set({
+      name: 'refreshToken',
+      value: refreshToken,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60
+    })
+    
+    return response
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },
