@@ -1208,7 +1208,7 @@ Generated on: ${new Date().toLocaleDateString()}`
                 <p className="text-sm opacity-70">Don&apos;t have an account?</p>
                 <button
                   onClick={() => setShowRegister(true)}
-                  className={`text-sm font-medium mt-1 ${tc.button.primary}`}
+                  className={`text-sm font-medium mt-1 px-3 py-2 rounded-lg ${tc.button.primary} ${tc.button.primaryText}`}
                 >
                   Create one
                 </button>
