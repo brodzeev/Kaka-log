@@ -1172,12 +1172,14 @@ Generated on: ${new Date().toLocaleDateString()}`
                   onSuccess={handleGoogleSignIn}
                   onError={() => setLoginError('Google Sign-In failed')}
                 />
-                <div className="mt-2">
-                  <AppleSignIn
-                    onSuccess={handleAppleSignIn}
-                    onError={() => setLoginError('Apple Sign-In failed')}
-                  />
-                </div>
+                {process.env.NEXT_PUBLIC_APPLE_CLIENT_ID && process.env.NEXT_PUBLIC_APPLE_CLIENT_ID !== 'your_apple_client_id_here' && (
+                  <div className="mt-2">
+                    <AppleSignIn
+                      onSuccess={handleAppleSignIn}
+                      onError={() => setLoginError('Apple Sign-In failed')}
+                    />
+                  </div>
+                )}
               </div>
               
               <div className="relative mb-6">
@@ -1922,12 +1924,14 @@ Generated on: ${new Date().toLocaleDateString()}`
                       >
                         + Link Google
                       </button>
-                      <button
-                        onClick={() => setShowLinkAppleOAuth(true)}
-                        className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} flex-1`}
-                      >
-                        + Link Apple
-                      </button>
+                      {process.env.NEXT_PUBLIC_APPLE_CLIENT_ID && process.env.NEXT_PUBLIC_APPLE_CLIENT_ID !== 'your_apple_client_id_here' && (
+                        <button
+                          onClick={() => setShowLinkAppleOAuth(true)}
+                          className={`rounded-xl ${tc.button.primary} px-4 py-2 ${tc.button.primaryText} flex-1`}
+                        >
+                          + Link Apple
+                        </button>
+                      )}
                     </div>
                   ) : null}
 
@@ -1950,7 +1954,7 @@ Generated on: ${new Date().toLocaleDateString()}`
                     </div>
                   )}
 
-                  {showLinkAppleOAuth && (
+                  {process.env.NEXT_PUBLIC_APPLE_CLIENT_ID && process.env.NEXT_PUBLIC_APPLE_CLIENT_ID !== 'your_apple_client_id_here' && showLinkAppleOAuth && (
                     <div className={`rounded-xl ${tc.bg.tertiary} p-4`}>
                       <button
                         onClick={() => setShowLinkAppleOAuth(false)}
