@@ -14,6 +14,9 @@ import { saveSession, clearSession, loadSession, handleGoogleOAuth, handleAppleO
 interface FamilyMember {
   id: string
   name: string
+  role?: 'adult' | 'child'
+  relationship?: string
+  dateOfBirth?: string
 }
 
 interface AuthMethod {
@@ -166,6 +169,13 @@ export default function Home() {
   const [childRegisterError, setChildRegisterError] = useState('')
   const [linkedOAuthMethods, setLinkedOAuthMethods] = useState<string[]>([])
   const [showLinkAppleOAuth, setShowLinkAppleOAuth] = useState(false)
+  // Family member editing state
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
+  const [editMemberName, setEditMemberName] = useState('')
+  const [editMemberRole, setEditMemberRole] = useState<'adult' | 'child'>('child')
+  const [editMemberRelationship, setEditMemberRelationship] = useState('')
+  const [editMemberDateOfBirth, setEditMemberDateOfBirth] = useState('')
+  const [editMemberError, setEditMemberError] = useState('')
 
   const tc = themes[theme]
 
@@ -484,6 +494,58 @@ export default function Home() {
       setLogs([]) // Clear logs since member changed
     } else {
       setRemoveMemberError(result.error || 'Failed to remove member')
+    }
+  }
+
+  const startEditingMember = (member: FamilyMember) => {
+    setEditingMemberId(member.id)
+    setEditMemberName(member.name)
+    setEditMemberRole(member.role || 'child')
+    setEditMemberRelationship(member.relationship || '')
+    setEditMemberDateOfBirth(member.dateOfBirth || '')
+    setEditMemberError('')
+  }
+
+  const cancelEditingMember = () => {
+    setEditingMemberId(null)
+    setEditMemberName('')
+    setEditMemberRole('child')
+    setEditMemberRelationship('')
+    setEditMemberDateOfBirth('')
+    setEditMemberError('')
+  }
+
+  const updateFamilyMember = async () => {
+    if (!loggedInUser || !editingMemberId) return
+    if (!editMemberName.trim()) {
+      setEditMemberError('Name is required')
+      return
+    }
+    setEditMemberError('')
+    const response = await fetch('/api/family-members', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: loggedInUser.id,
+        memberId: editingMemberId,
+        name: editMemberName,
+        role: editMemberRole,
+        relationship: editMemberRelationship,
+        dateOfBirth: editMemberDateOfBirth
+      })
+    })
+    const result = await response.json()
+    if (result.success) {
+      const updatedMembers = familyMembers.map(m => 
+        m.id === editingMemberId ? result.member : m
+      )
+      setFamilyMembers(updatedMembers)
+      if (currentMember?.id === editingMemberId) {
+        setCurrentMember(result.member)
+      }
+      cancelEditingMember()
+    } else {
+      setEditMemberError(result.error || 'Failed to update member')
     }
   }
 
@@ -1905,6 +1967,87 @@ Generated on: ${new Date().toLocaleDateString()}`
                         themeConfig={tc}
                       />
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Family Members Management (Adults Only) */}
+            {loggedInUser?.role === 'adult' && (
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold mb-4">Family Members</h3>
+                <div className={`rounded-xl ${tc.bg.tertiary} p-4 space-y-3`}>
+                  {familyMembers.length > 0 ? (
+                    familyMembers.map(member => (
+                      <div key={member.id} className={`border rounded-lg p-3 ${tc.bg.secondary}`}>
+                        {editingMemberId === member.id ? (
+                          // Edit Form
+                          <div className="space-y-3">
+                            {editMemberError && <p className="text-red-500 text-sm">{editMemberError}</p>}
+                            <input
+                              type="text"
+                              placeholder="Member Name"
+                              value={editMemberName}
+                              onChange={e => setEditMemberName(e.target.value)}
+                              className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                            />
+                            <select
+                              value={editMemberRole}
+                              onChange={e => setEditMemberRole(e.target.value as 'adult' | 'child')}
+                              className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                            >
+                              <option value="child">Child</option>
+                              <option value="adult">Adult</option>
+                            </select>
+                            <input
+                              type="text"
+                              placeholder="Relationship (e.g., Son, Daughter)"
+                              value={editMemberRelationship}
+                              onChange={e => setEditMemberRelationship(e.target.value)}
+                              className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                            />
+                            <input
+                              type="date"
+                              value={editMemberDateOfBirth}
+                              onChange={e => setEditMemberDateOfBirth(e.target.value)}
+                              className={`w-full rounded-lg border ${tc.border} px-3 py-2 ${tc.text.primary} ${tc.bg.tertiary}`}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={updateFamilyMember}
+                                className={`flex-1 rounded-lg ${tc.button.primary} px-3 py-2 ${tc.button.primaryText} text-sm`}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={cancelEditingMember}
+                                className={`flex-1 rounded-lg ${tc.button.secondary} px-3 py-2 text-sm`}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          // Display Mode
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-medium">{member.name}</p>
+                              <p className={`text-xs ${tc.text.secondary}`}>Role: {member.role || 'child'}</p>
+                              {member.relationship && <p className={`text-xs ${tc.text.secondary}`}>Relationship: {member.relationship}</p>}
+                              {member.dateOfBirth && <p className={`text-xs ${tc.text.secondary}`}>DOB: {member.dateOfBirth}</p>}
+                            </div>
+                            <button
+                              onClick={() => startEditingMember(member)}
+                              className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className={`text-sm ${tc.text.secondary}`}>No family members</p>
                   )}
                 </div>
               </div>

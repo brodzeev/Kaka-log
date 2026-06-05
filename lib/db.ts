@@ -394,6 +394,35 @@ export async function removeFamilyMember(userId: string, memberId: string): Prom
   await logsCollection.deleteMany({ memberId })
 }
 
+export async function updateFamilyMember(userId: string, memberId: string, updates: Partial<FamilyMember>): Promise<FamilyMember> {
+  const { db } = await connectToDatabase()
+  const collection: Collection<User> = db.collection('users')
+  
+  let user = await collection.findOne({ id: userId })
+  if (!user) throw new Error('User not found')
+  
+  const normalized = await normalizeUser(user)
+  
+  // Find the member to update
+  const memberIndex = (normalized.familyMembers || []).findIndex(m => m.id === memberId)
+  if (memberIndex === -1) throw new Error('Family member not found')
+  
+  // Update the member
+  const updatedMember: FamilyMember = {
+    ...normalized.familyMembers![memberIndex],
+    ...updates,
+    id: memberId // Ensure ID doesn't change
+  }
+  
+  // Update in database
+  await collection.updateOne(
+    { id: userId, 'familyMembers.id': memberId },
+    { $set: { 'familyMembers.$': updatedMember } }
+  )
+  
+  return updatedMember
+}
+
 export async function updateUserTheme(userId: string, theme: 'light' | 'dark' | 'slate' | 'ocean' | 'forest' | 'sunset'): Promise<void> {
   const { db } = await connectToDatabase()
   const collection: Collection<User> = db.collection('users')
